@@ -1,0 +1,30 @@
+# Normalize line endings
+* text=auto
+
+# Shell scripts should use LF
+*.sh text eol=lf
+
+# Markdown files
+*.md text
+
+# Config files
+*.conf text
+*.config text
+
+# JavaScript/JSON
+*.js text
+*.json text
+
+# Documentation
+*.txt text
+LICENSE text
+README text
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.tar.gz binary
