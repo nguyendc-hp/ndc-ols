@@ -75,21 +75,6 @@ show_system_info() {
     echo ""
 }
 
-#######################################
-# Show system info bar
-#######################################
-show_system_info() {
-    local cpu_cores=$(get_cpu_cores)
-    local total_ram=$(get_total_ram)
-    local free_disk=$(get_free_disk)
-    local public_ip=$(get_public_ip)
-    
-    printf "%b" "${CYAN}-----------------------------------------------------------------------\n${NC}"
-    printf "%b" "${GREEN}Tình trạng máy chủ: Hoạt động tốt${NC}\n"
-    printf "%b" "${CYAN}-----------------------------------------------------------------------\n${NC}"
-    printf "%b" "Server IP: ${GREEN}$public_ip${NC} | CPU: ${GREEN}${cpu_cores} cores${NC} | RAM: ${GREEN}${total_ram}GB${NC} | Disk: ${GREEN}${free_disk}GB${NC}\n"
-    echo ""
-}
 
 #######################################
 # Main menu
