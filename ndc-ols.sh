@@ -26,12 +26,12 @@ source "$NDC_INSTALL_DIR/utils/validators.sh"
 show_banner() {
     clear
     echo -e "${CYAN}"
-    echo "+-----------------------------------------------------------------------+"
-    echo "|                                                                       |"
+    echo -e "+-----------------------------------------------------------------------+"
+    echo -e "|                                                                       |"
     echo -e "|                 ${BOLD}NDC OLS${CYAN} phiên bản: ${BOLD}$NDC_VERSION${CYAN}                      |"
-    echo "|                  Công cụ quản lý VPS Node.js & React                 |"
-    echo "|                                                                       |"
-    echo "+-----------------------------------------------------------------------+"
+    echo -e "|                  Công cụ quản lý VPS Node.js & React                 |"
+    echo -e "|                                                                       |"
+    echo -e "+-----------------------------------------------------------------------+"
     echo -e "${NC}"
 }
 
