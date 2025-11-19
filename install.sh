@@ -6,6 +6,10 @@
 
 set -e
 
+# Prevent interactive prompts
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -29,12 +33,18 @@ GITHUB_RAW="https://raw.githubusercontent.com/nguyendc-hp/ndc-ols/main"
 #######################################
 print_banner() {
     clear
-    echo -e "${CYAN}"
-    echo "════════════════════════════════════════════════════════════"
-    echo "            ${BOLD}NDC OLS Installation Wizard${NC}${CYAN}"
-    echo "        Node & React VPS Management Tool v${NDC_VERSION}"
-    echo "════════════════════════════════════════════════════════════"
+    echo -e "${BLUE}"
+    echo "    _   _ ____   ____   ___  _     ____  "
+    echo "   | \ | |  _ \ / ___| / _ \| |   / ___| "
+    echo "   |  \| | | | | |    | | | | |   \___ \ "
+    echo "   | |\  | |_| | |___ | |_| | |___ ___) |"
+    echo "   |_| \_|____/ \____| \___/|_____|____/ "
     echo -e "${NC}"
+    echo -e "${CYAN}════════════════════════════════════════════════════════════${NC}"
+    echo -e "   ${BOLD}${GREEN}NDC OLS Installation Wizard${NC} - ${YELLOW}v${NDC_VERSION}${NC}"
+    echo -e "   ${CYAN}Node.js & React VPS Management Tool${NC}"
+    echo -e "${CYAN}════════════════════════════════════════════════════════════${NC}"
+    echo ""
 }
 
 print_info() { echo -e "${CYAN}[INFO]${NC} $1"; }
