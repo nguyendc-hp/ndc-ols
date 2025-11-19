@@ -44,45 +44,17 @@ install_ssl() {
     # List available domains from Nginx config
     print_info "Available domains:"
     local domains=()
-    local i=1
     
-    # Find domains in sites-enabled (active domains) and conf.d
-    # Use associative array to avoid duplicates
-    declare -A domain_map
-    
-    # Scan sites-enabled (symlinks)
-    if [ -d "/etc/nginx/sites-enabled" ]; then
-        for file in /etc/nginx/sites-enabled/*; do
-            if [ -f "$file" ]; then
-                # Extract server_name, handle multiple domains on one line, remove semicolon
-                local names=$(grep -m1 "server_name" "$file" | sed 's/server_name//;s/;//' | tr -s ' ')
-                for name in $names; do
-                    if [ ! -z "$name" ] && [ "$name" != "_" ] && [[ ! "$name" =~ ^www\. ]]; then
-                        domain_map["$name"]=1
-                    fi
-                done
+    # Use nginx -T to get full config and parse server_name
+    # This is more reliable than parsing files directly
+    if command -v nginx >/dev/null; then
+        # Get all server_names, remove duplicates, remove default/localhost/ip
+        while read -r domain; do
+            if [[ ! " ${domains[*]} " =~ " ${domain} " ]]; then
+                domains+=("$domain")
             fi
-        done
+        done < <(nginx -T 2>/dev/null | grep "server_name" | sed 's/.*server_name\s*//;s/;//;s/\s/\n/g' | grep -vE "^_$" | grep -vE "^localhost$" | grep -vE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$" | grep -vE "^www\." | sort -u)
     fi
-
-    # Scan conf.d
-    if [ -d "/etc/nginx/conf.d" ]; then
-        for file in /etc/nginx/conf.d/*.conf; do
-            if [ -f "$file" ]; then
-                local names=$(grep -m1 "server_name" "$file" | sed 's/server_name//;s/;//' | tr -s ' ')
-                for name in $names; do
-                    if [ ! -z "$name" ] && [ "$name" != "_" ] && [[ ! "$name" =~ ^www\. ]]; then
-                        domain_map["$name"]=1
-                    fi
-                done
-            fi
-        done
-    fi
-
-    # Convert map to array for display
-    for domain in "${!domain_map[@]}"; do
-        domains+=("$domain")
-    done
 
     # Display domains
     if [ ${#domains[@]} -gt 0 ]; then
