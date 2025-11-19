@@ -127,7 +127,9 @@ module.exports = {
       ME_CONFIG_BASICAUTH_USERNAME: '$gui_user',
       ME_CONFIG_BASICAUTH_PASSWORD: '$gui_pass',
       PORT: '$port',
-      VCAP_APP_PORT: '$port'
+      VCAP_APP_PORT: '$port',
+      VCAP_APP_HOST: '0.0.0.0',
+      HOST: '0.0.0.0'
     }
   }]
 };
