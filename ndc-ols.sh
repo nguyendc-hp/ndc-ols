@@ -142,7 +142,7 @@ check_installation() {
         print_error "NDC OLS is not installed!"
         print_info "Please run the installation script first:"
         echo ""
-        echo "  curl -sO https://raw.githubusercontent.com/yourusername/ndc-ols/main/install.sh && bash install.sh"
+        echo "  curl -sO https://raw.githubusercontent.com/nguyendc-hp/ndc-ols/main/install.sh && bash install.sh"
         echo ""
         exit 1
     fi

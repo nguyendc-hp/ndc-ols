@@ -60,13 +60,13 @@
 **Chỉ cần 1 dòng lệnh:**
 
 ```bash
-curl -sL https://raw.githubusercontent.com/ndcviet/ndc-ols/main/install.sh | bash
+curl -sL https://raw.githubusercontent.com/nguyendc-hp/ndc-ols/main/install.sh | bash
 ```
 
 **Hoặc tải về và chạy:**
 
 ```bash
-curl -sO https://raw.githubusercontent.com/ndcviet/ndc-ols/main/install.sh
+curl -sO https://raw.githubusercontent.com/nguyendc-hp/ndc-ols/main/install.sh
 chmod +x install.sh
 bash install.sh
 ```
@@ -74,7 +74,7 @@ bash install.sh
 **Hoặc clone từ GitHub:**
 
 ```bash
-git clone https://github.com/ndcviet/ndc-ols.git
+git clone https://github.com/nguyendc-hp/ndc-ols.git
 cd ndc-ols
 chmod +x install.sh
 bash install.sh
@@ -492,8 +492,8 @@ Chúng tôi rất hoan nghênh mọi đóng góp từ cộng đồng!
 
 ### Contributors
 
-<a href="https://github.com/yourusername/ndc-ols/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=yourusername/ndc-ols" />
+<a href="https://github.com/nguyendc-hp/ndc-ols/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=nguyendc-hp/ndc-ols" />
 </a>
 
 ---
@@ -502,15 +502,15 @@ Chúng tôi rất hoan nghênh mọi đóng góp từ cộng đồng!
 
 ### Community Support
 
-- **GitHub Issues**: [Report bugs](https://github.com/yourusername/ndc-ols/issues)
-- **GitHub Discussions**: [Ask questions](https://github.com/yourusername/ndc-ols/discussions)
+- **GitHub Issues**: [Report bugs](https://github.com/nguyendc-hp/ndc-ols/issues)
+- **GitHub Discussions**: [Ask questions](https://github.com/nguyendc-hp/ndc-ols/discussions)
 - **Discord**: [Join server](https://discord.gg/your-invite)
 - **Facebook Group**: [Cộng đồng NDC OLS](https://facebook.com/groups/ndc-ols)
 
 ### Documentation
 
 - **Docs**: [docs.ndc-ols.com](https://docs.ndc-ols.com)
-- **Wiki**: [GitHub Wiki](https://github.com/yourusername/ndc-ols/wiki)
+- **Wiki**: [GitHub Wiki](https://github.com/nguyendc-hp/ndc-ols/wiki)
 - **Blog**: [Tutorials & Tips](https://blog.ndc-ols.com)
 
 ### Professional Support
@@ -526,7 +526,7 @@ NDC OLS hoàn toàn miễn phí và open source. Nếu bạn thấy hữu ích, 
 ### Donation Options
 
 - **PayPal**: [paypal.me/ndc-ols](https://paypal.me/ndc-ols)
-- **GitHub Sponsors**: [Sponsor us](https://github.com/sponsors/yourusername)
+- **GitHub Sponsors**: [Sponsor us](https://github.com/sponsors/nguyendc-hp)
 - **Bitcoin**: `1NDCxxxxxxxxxxxxxxxxxxx`
 - **Ethereum**: `0xNDCxxxxxxxxxxxxxxxxxxx`
 
@@ -540,14 +540,14 @@ Cảm ơn các nhà tài trợ của chúng tôi! 🙏
 
 ## 📊 Stats
 
-![GitHub stars](https://img.shields.io/github/stars/yourusername/ndc-ols?style=social)
-![GitHub forks](https://img.shields.io/github/forks/yourusername/ndc-ols?style=social)
-![GitHub watchers](https://img.shields.io/github/watchers/yourusername/ndc-ols?style=social)
+![GitHub stars](https://img.shields.io/github/stars/nguyendc-hp/ndc-ols?style=social)
+![GitHub forks](https://img.shields.io/github/forks/nguyendc-hp/ndc-ols?style=social)
+![GitHub watchers](https://img.shields.io/github/watchers/nguyendc-hp/ndc-ols?style=social)
 
-![GitHub issues](https://img.shields.io/github/issues/yourusername/ndc-ols)
-![GitHub pull requests](https://img.shields.io/github/issues-pr/yourusername/ndc-ols)
-![GitHub last commit](https://img.shields.io/github/last-commit/yourusername/ndc-ols)
-![GitHub contributors](https://img.shields.io/github/contributors/yourusername/ndc-ols)
+![GitHub issues](https://img.shields.io/github/issues/nguyendc-hp/ndc-ols)
+![GitHub pull requests](https://img.shields.io/github/issues-pr/nguyendc-hp/ndc-ols)
+![GitHub last commit](https://img.shields.io/github/last-commit/nguyendc-hp/ndc-ols)
+![GitHub contributors](https://img.shields.io/github/contributors/nguyendc-hp/ndc-ols)
 
 ---
 
@@ -571,7 +571,7 @@ copies of the Software...
 
 ## 🌟 Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=yourusername/ndc-ols&type=Date)](https://star-history.com/#yourusername/ndc-ols&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=nguyendc-hp/ndc-ols&type=Date)](https://star-history.com/#nguyendc-hp/ndc-ols&Date)
 
 ---
 
@@ -615,10 +615,10 @@ copies of the Software...
 
 ## 🔗 Links & Community
 
-- **GitHub**: [github.com/ndcviet/ndc-ols](https://github.com/ndcviet/ndc-ols)
-- **Documentation**: [github.com/ndcviet/ndc-ols/wiki](https://github.com/ndcviet/ndc-ols/wiki)
-- **Issues**: [github.com/ndcviet/ndc-ols/issues](https://github.com/ndcviet/ndc-ols/issues)
-- **Discussions**: [github.com/ndcviet/ndc-ols/discussions](https://github.com/ndcviet/ndc-ols/discussions)
+- **GitHub**: [github.com/nguyendc-hp/ndc-ols](https://github.com/nguyendc-hp/ndc-ols)
+- **Documentation**: [github.com/nguyendc-hp/ndc-ols/wiki](https://github.com/nguyendc-hp/ndc-ols/wiki)
+- **Issues**: [github.com/nguyendc-hp/ndc-ols/issues](https://github.com/nguyendc-hp/ndc-ols/issues)
+- **Discussions**: [github.com/nguyendc-hp/ndc-ols/discussions](https://github.com/nguyendc-hp/ndc-ols/discussions)
 - **Changelog**: [CHANGELOG.md](CHANGELOG.md)
 
 ### 👥 Community

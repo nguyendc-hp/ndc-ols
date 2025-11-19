@@ -4,19 +4,19 @@
 
 ### Method 1: One-line installation (Recommended):
 ```bash
-curl -sL https://raw.githubusercontent.com/ndcviet/ndc-ols/main/install.sh | bash
+curl -sL https://raw.githubusercontent.com/nguyendc-hp/ndc-ols/main/install.sh | bash
 ```
 
 ### Method 2: Download and run:
 ```bash
-curl -sO https://raw.githubusercontent.com/ndcviet/ndc-ols/main/install.sh
+curl -sO https://raw.githubusercontent.com/nguyendc-hp/ndc-ols/main/install.sh
 chmod +x install.sh
 bash install.sh
 ```
 
 ### Method 3: Clone from GitHub:
 ```bash
-git clone https://github.com/ndcviet/ndc-ols.git
+git clone https://github.com/nguyendc-hp/ndc-ols.git
 cd ndc-ols
 chmod +x install.sh
 bash install.sh

@@ -21,8 +21,8 @@ NDC_INSTALL_DIR="/usr/local/ndc-ols"
 NDC_CONFIG_DIR="/etc/ndc-ols"
 NDC_LOG_DIR="/var/log/ndc-ols"
 NDC_BACKUP_DIR="/var/backups/ndc-ols"
-GITHUB_REPO="https://github.com/yourusername/ndc-ols"
-GITHUB_RAW="https://raw.githubusercontent.com/yourusername/ndc-ols/main"
+GITHUB_REPO="https://github.com/nguyendc-hp/ndc-ols"
+GITHUB_RAW="https://raw.githubusercontent.com/nguyendc-hp/ndc-ols/main"
 
 #######################################
 # Print functions
@@ -510,7 +510,20 @@ main() {
     echo "  • SSL (Let's Encrypt), Firewall, Fail2ban"
     echo ""
     
-    read -p "$(echo -e "${CYAN}Continue with installation? [y/N]:${NC} ")" confirm
+    # Check if running interactively
+    if [ -t 0 ]; then
+        read -p "$(echo -e "${CYAN}Continue with installation? [y/N]:${NC} ")" confirm
+    else
+        # If piped, try to read from /dev/tty
+        if [ -c /dev/tty ]; then
+            read -p "$(echo -e "${CYAN}Continue with installation? [y/N]:${NC} ")" confirm < /dev/tty
+        else
+            # If no tty, assume yes (for automated installs) or exit
+            # For safety, let's assume yes if it's a pipe install intended to be automated, 
+            # but usually curl | bash implies "do it".
+            confirm="y"
+        fi
+    fi
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
         print_error "Installation cancelled"
         exit 1

@@ -28,7 +28,7 @@ Thank you for your interest in contributing to NDC OLS!
 
 ```bash
 # Fork and clone
-git clone https://github.com/yourusername/ndc-ols.git
+git clone https://github.com/nguyendc-hp/ndc-ols.git
 cd ndc-ols
 
 # Create feature branch
