@@ -181,6 +181,7 @@ ndc-ols
 
 #### 6️⃣ Deploy New App
 - Deploy từ Git (GitHub, GitLab, Bitbucket)
+- **NEW:** Full Stack Deploy (Node.js + React Monorepo)
 - Templates: React, Next.js, Express, NestJS, Vue, Svelte
 - Auto install dependencies
 - Auto build
