@@ -108,6 +108,9 @@ install_mongo_express() {
     # Install
     npm install -g mongo-express
     
+    # Get mongo-express path for CWD
+    MONGO_EXPRESS_HOME="$(npm root -g)/mongo-express"
+    
     # Start with PM2
     print_step "Starting Mongo Express..."
     
@@ -116,7 +119,8 @@ install_mongo_express() {
 module.exports = {
   apps: [{
     name: 'mongo-express',
-    script: 'mongo-express',
+    script: 'app.js',
+    cwd: '$MONGO_EXPRESS_HOME',
     env: {
       ME_CONFIG_MONGODB_ENABLE_ADMIN: 'true',
       ME_CONFIG_MONGODB_SERVER: 'localhost',
