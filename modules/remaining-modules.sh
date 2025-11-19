@@ -81,8 +81,69 @@ self_update_menu() {
 # GUI Manager
 gui_manager_menu() {
     print_header "DATABASE ADMIN GUI"
-    print_info "Install pgAdmin, Mongo Express, phpMyAdmin manually"
-    print_info "Visit: https://docs.ndc-ols.com/gui"
+    echo " 1) Install Mongo Express (MongoDB GUI)"
+    echo " 0) Back"
+    
+    read -p "$(echo -e "${CYAN}Enter choice:${NC} ")" choice
+    case $choice in
+        1) install_mongo_express ;;
+        *) return ;;
+    esac
+}
+
+install_mongo_express() {
+    print_step "Installing Mongo Express..."
+    
+    # Check if MongoDB is installed
+    if ! command_exists mongod; then
+        print_error "MongoDB is not installed!"
+        return
+    fi
+    
+    # Get config
+    read_input "GUI Username" "admin" gui_user
+    read_input "GUI Password" "$(generate_password)" gui_pass
+    read_input "Port" "8081" port
+    
+    # Install
+    npm install -g mongo-express
+    
+    # Start with PM2
+    print_step "Starting Mongo Express..."
+    
+    # Create ecosystem file
+    cat > "/etc/ndc-ols/mongo-express.config.js" <<EOF
+module.exports = {
+  apps: [{
+    name: 'mongo-express',
+    script: 'mongo-express',
+    env: {
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: 'true',
+      ME_CONFIG_MONGODB_SERVER: 'localhost',
+      ME_CONFIG_BASICAUTH_USERNAME: '$gui_user',
+      ME_CONFIG_BASICAUTH_PASSWORD: '$gui_pass',
+      PORT: '$port',
+      VCAP_APP_PORT: '$port'
+    }
+  }]
+};
+EOF
+
+    pm2 start "/etc/ndc-ols/mongo-express.config.js"
+    pm2 save
+    
+    # Open firewall
+    if command_exists ufw; then
+        ufw allow $port/tcp
+    elif command_exists firewall-cmd; then
+        firewall-cmd --permanent --add-port=$port/tcp
+        firewall-cmd --reload
+    fi
+    
+    print_success "Mongo Express installed!"
+    print_info "Access: http://YOUR_IP:$port"
+    print_info "User: $gui_user"
+    print_info "Pass: $gui_pass"
     press_any_key
 }
 
