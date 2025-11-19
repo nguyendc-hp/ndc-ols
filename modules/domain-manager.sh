@@ -344,7 +344,38 @@ EOF
 remove_domain() {
     print_header "REMOVE DOMAIN"
     
-    read_input "Enter domain name" "" domain
+    # List available domains
+    print_info "Available domains:"
+    local domains=()
+    
+    # Use nginx -T to get full config and parse server_name
+    if command -v nginx >/dev/null; then
+        while read -r domain; do
+            if [[ ! " ${domains[*]} " =~ " ${domain} " ]]; then
+                domains+=("$domain")
+            fi
+        done < <(nginx -T 2>/dev/null | grep "server_name" | sed 's/.*server_name\s*//;s/;//;s/\s/\n/g' | grep -vE "^_$" | grep -vE "^localhost$" | grep -vE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$" | grep -vE "^www\." | sort -u)
+    fi
+    
+    if [ ${#domains[@]} -eq 0 ]; then
+        print_warning "No domains found."
+        read_input "Enter domain name manually" "" domain
+    else
+        # Display domains
+        for ((j=0; j<${#domains[@]}; j++)); do
+            echo -e " ${GREEN}$((j+1)))${NC} ${domains[$j]}"
+        done
+        
+        echo ""
+        read -p "$(echo -e "${CYAN}Select domain (1-${#domains[@]}) or enter manually:${NC} ")" selection
+        
+        if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#domains[@]}" ]; then
+            domain="${domains[$((selection-1))]}"
+            print_info "Selected domain: $domain"
+        else
+            domain="$selection"
+        fi
+    fi
     
     if [ -z "$domain" ]; then
         print_error "Domain required!"
@@ -381,7 +412,34 @@ remove_domain() {
 view_domain_config() {
     print_header "VIEW DOMAIN CONFIG"
     
-    read_input "Enter domain name" "" domain
+    # List available domains
+    print_info "Available domains:"
+    local domains=()
+    
+    if command -v nginx >/dev/null; then
+        while read -r domain; do
+            if [[ ! " ${domains[*]} " =~ " ${domain} " ]]; then
+                domains+=("$domain")
+            fi
+        done < <(nginx -T 2>/dev/null | grep "server_name" | sed 's/.*server_name\s*//;s/;//;s/\s/\n/g' | grep -vE "^_$" | grep -vE "^localhost$" | grep -vE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$" | grep -vE "^www\." | sort -u)
+    fi
+    
+    if [ ${#domains[@]} -eq 0 ]; then
+        print_warning "No domains found."
+        read_input "Enter domain name manually" "" domain
+    else
+        for ((j=0; j<${#domains[@]}; j++)); do
+            echo -e " ${GREEN}$((j+1)))${NC} ${domains[$j]}"
+        done
+        echo ""
+        read -p "$(echo -e "${CYAN}Select domain (1-${#domains[@]}) or enter manually:${NC} ")" selection
+        
+        if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#domains[@]}" ]; then
+            domain="${domains[$((selection-1))]}"
+        else
+            domain="$selection"
+        fi
+    fi
     
     local conf="/etc/nginx/sites-available/$domain"
     [ ! -f "$conf" ] && conf="/etc/nginx/conf.d/$domain.conf"
@@ -402,7 +460,34 @@ view_domain_config() {
 edit_domain_config() {
     print_header "EDIT DOMAIN CONFIG"
     
-    read_input "Enter domain name" "" domain
+    # List available domains
+    print_info "Available domains:"
+    local domains=()
+    
+    if command -v nginx >/dev/null; then
+        while read -r domain; do
+            if [[ ! " ${domains[*]} " =~ " ${domain} " ]]; then
+                domains+=("$domain")
+            fi
+        done < <(nginx -T 2>/dev/null | grep "server_name" | sed 's/.*server_name\s*//;s/;//;s/\s/\n/g' | grep -vE "^_$" | grep -vE "^localhost$" | grep -vE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$" | grep -vE "^www\." | sort -u)
+    fi
+    
+    if [ ${#domains[@]} -eq 0 ]; then
+        print_warning "No domains found."
+        read_input "Enter domain name manually" "" domain
+    else
+        for ((j=0; j<${#domains[@]}; j++)); do
+            echo -e " ${GREEN}$((j+1)))${NC} ${domains[$j]}"
+        done
+        echo ""
+        read -p "$(echo -e "${CYAN}Select domain (1-${#domains[@]}) or enter manually:${NC} ")" selection
+        
+        if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#domains[@]}" ]; then
+            domain="${domains[$((selection-1))]}"
+        else
+            domain="$selection"
+        fi
+    fi
     
     local conf="/etc/nginx/sites-available/$domain"
     [ ! -f "$conf" ] && conf="/etc/nginx/conf.d/$domain.conf"
