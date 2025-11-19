@@ -416,6 +416,10 @@ clone_ndc_ols() {
         cp -r "$(dirname "$0")"/* "$NDC_INSTALL_DIR/"
     else
         # Remote installation
+        # Remove existing directory if it exists to avoid clone errors
+        rm -rf "$NDC_INSTALL_DIR"
+        mkdir -p "$NDC_INSTALL_DIR"
+        
         git clone "$GITHUB_REPO" "$NDC_INSTALL_DIR" >/dev/null 2>&1 || {
             print_error "Failed to clone repository"
             exit 1
