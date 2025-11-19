@@ -26,12 +26,12 @@ source "$NDC_INSTALL_DIR/utils/validators.sh"
 show_banner() {
     clear
     printf "%b" "${CYAN}"
-    printf "%b" "+=========================================================================+\n"
-    printf "%b" "|                                                                         |\n"
-    printf "%b" "|                   ${BOLD}NDC OLS${CYAN} - phiên bản: ${BOLD}$NDC_VERSION${CYAN}                        |\n"
-    printf "%b" "|            Công cụ quản lý VPS Node.js & React toàn diện             |\n"
-    printf "%b" "|                                                                         |\n"
-    printf "%b" "+=========================================================================+\n"
+    printf "%b" "+-----------------------------------------------------------------------+\n"
+    printf "%b" "|                                                                       |\n"
+    printf "%b" "|                 ${BOLD}NDC OLS${CYAN} phiên bản: ${BOLD}$NDC_VERSION${CYAN}                      |\n"
+    printf "%b" "|                  Công cụ quản lý VPS Node.js & React                 |\n"
+    printf "%b" "|                                                                       |\n"
+    printf "%b" "+-----------------------------------------------------------------------+\n"
     printf "%b" "${NC}\n"
 }
 
@@ -44,9 +44,9 @@ show_system_info() {
     local free_disk=$(get_free_disk)
     local public_ip=$(get_public_ip)
     
-    printf "%b" "${CYAN}=========================================================================\n${NC}"
+    printf "%b" "${CYAN}-----------------------------------------------------------------------\n${NC}"
     printf "%b" "${GREEN}Tình trạng máy chủ: Hoạt động tốt${NC}\n"
-    printf "%b" "${CYAN}=========================================================================\n${NC}"
+    printf "%b" "${CYAN}-----------------------------------------------------------------------\n${NC}"
     printf "%b" "Server IP: ${GREEN}$public_ip${NC} | CPU: ${GREEN}${cpu_cores} cores${NC} | RAM: ${GREEN}${total_ram}GB${NC} | Disk: ${GREEN}${free_disk}GB${NC}\n"
     echo ""
 }
