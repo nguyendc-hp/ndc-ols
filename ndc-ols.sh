@@ -26,11 +26,12 @@ source "$NDC_INSTALL_DIR/utils/validators.sh"
 show_banner() {
     clear
     echo -e "${CYAN}"
-    echo "════════════════════════════════════════════════════════════"
-    echo -e "               ${BWHITE}NDC OLS${CYAN} - Node & React Management"
-    echo "           OpenSource VPS Management for Node.js"
-    echo -e "                   Version ${BWHITE}$NDC_VERSION${CYAN}"
-    echo "════════════════════════════════════════════════════════════"
+    echo "+-----------------------------------------------------------------------+"
+    echo "|                                                                       |"
+    echo "|                 ${BOLD}NDC OLS${CYAN} phiên bản: ${BOLD}$NDC_VERSION${CYAN}                      |"
+    echo "|                  Công cụ quản lý VPS Node.js & React                 |"
+    echo "|                                                                       |"
+    echo "+-----------------------------------------------------------------------+"
     echo -e "${NC}"
 }
 
@@ -43,7 +44,10 @@ show_system_info() {
     local free_disk=$(get_free_disk)
     local public_ip=$(get_public_ip)
     
-    echo -e "${NC}Server IP: ${GREEN}$public_ip${NC} | CPU: ${GREEN}${cpu_cores} cores${NC} | RAM: ${GREEN}${total_ram}GB${NC} | Disk: ${GREEN}${free_disk}GB free${NC}"
+    echo -e "${CYAN}=========================================================================${NC}"
+    echo -e "${GREEN}Tình trạng máy chủ: Hoạt động tốt${NC}"
+    echo -e "${CYAN}=========================================================================${NC}"
+    echo -e "Server IP: ${GREEN}$public_ip${NC} | CPU: ${GREEN}${cpu_cores} cores${NC} | RAM: ${GREEN}${total_ram}GB${NC} | Disk: ${GREEN}${free_disk}GB${NC}"
     echo ""
 }
 
@@ -54,23 +58,24 @@ show_main_menu() {
     show_banner
     show_system_info
     
-    echo -e " ${GREEN}1)${NC}  Quản lý Apps (Node/React)     ${GREEN}16)${NC} Clone/Duplicate Project"
-    echo -e " ${GREEN}2)${NC}  Quản lý Domain                ${GREEN}17)${NC} Quản lý Source Code"
-    echo -e " ${GREEN}3)${NC}  Quản lý SSL (Let's Encrypt)   ${GREEN}18)${NC} Phân quyền Files/Folders"
-    echo -e " ${GREEN}4)${NC}  Quản lý Database              ${GREEN}19)${NC} Quản lý Cache (Redis)"
-    echo -e " ${GREEN}5)${NC}  Backup & Restore              ${GREEN}20)${NC} Thông tin Credentials"
-    echo -e " ${GREEN}6)${NC}  Deploy New App                ${GREEN}21)${NC} Thông tin Server"
-    echo -e " ${GREEN}7)${NC}  Quản lý Services (PM2)        ${GREEN}22)${NC} Bảo mật & Firewall"
-    echo -e " ${GREEN}8)${NC}  Firewall & IP Management      ${GREEN}23)${NC} Update NDC OLS"
-    echo -e " ${GREEN}9)${NC}  SSH/SFTP Management           ${GREEN}24)${NC} Database Admin GUI"
-    echo -e " ${GREEN}10)${NC} System Update                 ${GREEN}25)${NC} Support Request"
-    echo -e " ${GREEN}11)${NC} CDN & Cache Config            ${GREEN}26)${NC} Quản lý Swap/Memory"
-    echo -e " ${GREEN}12)${NC} Nginx Configuration           ${GREEN}27)${NC} Migration Tool"
-    echo -e " ${GREEN}13)${NC} Environment Variables         ${GREEN}28)${NC} File Manager Web"
-    echo -e " ${GREEN}14)${NC} Node.js Version Manager       ${GREEN}29)${NC} Monitor Resources"
-    echo -e " ${GREEN}15)${NC} Logs Management               ${GREEN}30)${NC} Donate & Support"
     echo ""
-    echo -e " ${RED}0)${NC}  Exit"
+    echo -e " ${GREEN}1)${NC}  Quản lý Apps (Node/React)     ${GREEN}16)${NC} Nhân bản dự án"
+    echo -e " ${GREEN}2)${NC}  Quản lý Domain                ${GREEN}17)${NC} Quản lý mã nguồn"
+    echo -e " ${GREEN}3)${NC}  Quản lý SSL                   ${GREEN}18)${NC} Phân quyền files/folder"
+    echo -e " ${GREEN}4)${NC}  Quản lý Database              ${GREEN}19)${NC} Quản lý Cache (Redis)"
+    echo -e " ${GREEN}5)${NC}  Sao lưu & Khôi phục           ${GREEN}20)${NC} Thông tin Credentials"
+    echo -e " ${GREEN}6)${NC}  Tải mã nguồn ứng dụng         ${GREEN}21)${NC} Thông tin Server"
+    echo -e " ${GREEN}7)${NC}  Quản lý Service (PM2)         ${GREEN}22)${NC} Bảo mật & Tường lửa"
+    echo -e " ${GREEN}8)${NC}  Quản lý Mở/Khóa IP            ${GREEN}23)${NC} Cập nhật NDC OLS"
+    echo -e " ${GREEN}9)${NC}  Quản lý SSH/SFTP              ${GREEN}24)${NC} Quản lý PhpMyAdmin"
+    echo -e " ${GREEN}10)${NC} Cập nhật Webserver            ${GREEN}25)${NC} Báo lỗi"
+    echo -e " ${GREEN}11)${NC} Cấu hình Cache                ${GREEN}26)${NC} Quản lý Swap/Memory"
+    echo -e " ${GREEN}12)${NC} Cấu hình Nginx                ${GREEN}27)${NC} Chuyển website"
+    echo -e " ${GREEN}13)${NC} Biến môi trường                ${GREEN}28)${NC} Quản lý File Manager"
+    echo -e " ${GREEN}14)${NC} Quản lý Node.js               ${GREEN}29)${NC} Quản lý tài nguyên server"
+    echo -e " ${GREEN}15)${NC} Quản lý Logs                  ${GREEN}30)${NC} Tài trợ dự án"
+    echo ""
+    echo -e " ${RED}0)${NC}  Thoát"
     echo ""
 }
 
@@ -178,7 +183,7 @@ main() {
     # Main loop
     while true; do
         show_main_menu
-        read -p "$(echo -e "${CYAN}Enter your choice [0-30]:${NC} ")" choice
+        read -p "$(echo -e "${CYAN}Nhập lựa chọn của bạn (1-30) [0=Thoát]:${NC} ")" choice
         echo ""
         handle_menu_choice "$choice"
     done
