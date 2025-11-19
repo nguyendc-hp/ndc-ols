@@ -326,14 +326,15 @@ install_redis() {
     case "$PKG_MANAGER" in
         apt-get)
             apt-get install -y -qq redis-server >/dev/null 2>&1
+            systemctl enable redis-server
+            systemctl start redis-server
             ;;
         dnf)
             dnf install -y -q redis >/dev/null 2>&1
+            systemctl enable redis
+            systemctl start redis
             ;;
     esac
-    
-    systemctl enable redis
-    systemctl start redis
     
     print_success "Redis installed"
 }
