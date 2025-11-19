@@ -59,9 +59,21 @@ security_manager_menu() {
 # Self Update
 self_update_menu() {
     print_header "UPDATE NDC OLS"
-    if confirm_action "Update NDC OLS to latest version?"; then
-        cd "$NDC_INSTALL_DIR" && git pull
-        print_success "NDC OLS updated"
+    if ask_yes_no "Update NDC OLS to latest version?" "y"; then
+        print_step "Updating from GitHub..."
+        cd "$NDC_INSTALL_DIR" || return
+        
+        # Reset local changes to ensure clean pull
+        git reset --hard HEAD
+        git pull origin main
+        
+        # Update permissions
+        chmod +x "$NDC_INSTALL_DIR/ndc-ols.sh"
+        chmod +x "$NDC_INSTALL_DIR/modules/"*.sh
+        chmod +x "$NDC_INSTALL_DIR/utils/"*.sh
+        
+        print_success "NDC OLS updated successfully!"
+        print_info "Please restart the script to see changes."
     fi
     press_any_key
 }
