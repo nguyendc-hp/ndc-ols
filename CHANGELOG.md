@@ -81,15 +81,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - System information
 - Resource monitoring
 
-## [1.0.0] - 2024-01-XX (Planned Release)
+## [1.1.0] - 2025-11-19
 
-### Release Goals
-- Production-ready stable release
-- Full documentation
-- Test coverage for all modules
-- Community feedback incorporated
+### Added
+- **Full Stack Deploy**: New deployment option for MERN/PERN stack apps (Monorepo support).
+- **Auto-detection**: Automatically detects `backend` and `frontend` folders in Git repositories.
+- **Smart Configuration**: Auto-configures Nginx reverse proxy for `/api` and static files for `/`.
+- **Env Management**: Auto-generates `.env` files and configures `VITE_API_BASE_URL`.
 
-## [0.1.0] - 2024-01-XX (Beta)
+## [1.0.0] - 2025-11-18
 
 ### Beta Release
 - Initial public beta
