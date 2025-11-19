@@ -133,6 +133,9 @@ module.exports = {
 };
 EOF
 
+    # Stop and delete existing process if it exists to ensure config update
+    pm2 delete mongo-express 2>/dev/null || true
+
     pm2 start "/etc/ndc-ols/mongo-express.config.js"
     pm2 save
     
