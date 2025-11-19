@@ -49,7 +49,7 @@ show_system_info() {
     local public_ip=$(get_public_ip)
     local uptime=$(uptime -p | sed 's/up //;s/days/ngày/;s/hours/giờ/;s/minutes/phút/')
     local ram_usage=$(free -m | awk '/Mem:/ { printf("%d/%dMB (%.2f%%)", $3, $2, $3*100/$2) }')
-    local disk_usage=$(df -h / | awk 'NR==2 { printf("%d/%dGB (%s)", $3, $2, $5) }' | sed 's/G//g')
+    local disk_usage=$(df -BG / | awk 'NR==2 { printf("%d/%dGB (%s)", $3, $2, $5) }')
     local cpu_usage=$(top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1"%"}')
 
     printf "%b" "CPU : ${GREEN}${cpu_usage}${NC} | Ram : ${GREEN}${ram_usage}${NC} | Disk: ${GREEN}${disk_usage}${NC}\n"
