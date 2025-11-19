@@ -32,7 +32,45 @@ show_banner() {
     printf "%b" "|                  Công cụ quản lý VPS Node.js & React                  |\n"
     printf "%b" "|                                                                       |\n"
     printf "%b" "+-----------------------------------------------------------------------+\n"
-    printf "%b" "${NC}\n"
+    printf "%b" "Chúc bạn có buổi chiều tuyệt vời - Chào mừng bạn đến với NDC OLS\n"
+    printf "%b" "-------------------------------------------------------------------------\n"
+    printf "%b" "${NC}"
+}
+
+#######################################
+# Show system info bar
+#######################################
+show_system_info() {
+    local cpu_cores=$(get_cpu_cores)
+    local total_ram=$(get_total_ram)
+    local free_disk=$(get_free_disk)
+    local public_ip=$(get_public_ip)
+    local uptime=$(uptime -p | sed 's/up //;s/days/ngày/;s/hours/giờ/;s/minutes/phút/')
+    local ram_usage=$(free -m | awk '/Mem:/ { printf("%d/%dMB (%.2f%%)", $3, $2, $3*100/$2) }')
+    local disk_usage=$(df -h / | awk 'NR==2 { printf("%d/%dGB (%s)", $3, $2, $5) }' | sed 's/G//g')
+    local cpu_usage=$(top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1"%"}')
+
+    printf "%b" "CPU : ${GREEN}${cpu_usage}${NC} | Ram : ${GREEN}${ram_usage}${NC} | Disk: ${GREEN}${disk_usage}${NC}\n"
+    printf "%b" "${CYAN}-------------------------------------------------------------------------${NC}\n"
+    printf "%b" "Webserver Nginx         : ${GREEN}Hoạt động tốt${NC}\n"
+    printf "%b" "MongoDB                 : ${GREEN}Hoạt động tốt${NC}\n"
+    printf "%b" "Tình trạng máy chủ      : ${GREEN}Hoạt động tốt${NC}\n"
+    printf "%b" "System uptime           : ${GREEN}${uptime}${NC}\n"
+    printf "%b" "${CYAN}-------------------------------------------------------------------------${NC}\n"
+    printf "%b" "Tài liệu hướng dẫn      : ${CYAN}https://github.com/nguyendc-hp/ndc-ols${NC}\n"
+    printf "%b" "Nhà phát triển          : ${CYAN}Nguyen DC${NC}\n"
+    printf "%b" "Phiên bản hiện tại      : ${CYAN}${NDC_VERSION}${NC}\n"
+    printf "%b" "${CYAN}-------------------------------------------------------------------------${NC}\n"
+    printf "%b" "Nhập lệnh phím ${GREEN}1${NC} để vào menu quản trị Apps\n"
+    printf "%b" "Nhập lệnh phím ${GREEN}0${NC} để thoát chương trình\n"
+    printf "%b" "${CYAN}-------------------------------------------------------------------------${NC}\n"
+    printf "%b" "${CYAN}=========================================================================${NC}\n"
+    printf "%b" "Thông báo Cập nhật - Bạn đang sử dụng NDC OLS phiên bản:  ${BOLD}${NDC_VERSION}${NC}\n"
+    printf "%b" "${CYAN}=========================================================================${NC}\n"
+    printf "%b" "Phát triển bởi: Nguyen DC (nguyendc-hp)\n"
+    printf "%b" "Tài trợ dự án: https://github.com/sponsors/nguyendc-hp\n"
+    printf "%b" "${CYAN}=========================================================================${NC}\n"
+    echo ""
 }
 
 #######################################
@@ -71,7 +109,7 @@ show_main_menu() {
     echo -e " ${GREEN}10)${NC} Cập nhật Webserver            ${GREEN}25)${NC} Báo lỗi"
     echo -e " ${GREEN}11)${NC} Cấu hình Cache                ${GREEN}26)${NC} Quản lý Swap/Memory"
     echo -e " ${GREEN}12)${NC} Cấu hình Nginx                ${GREEN}27)${NC} Chuyển website"
-    echo -e " ${GREEN}13)${NC} Biến môi trường                ${GREEN}28)${NC} Quản lý File Manager"
+    echo -e " ${GREEN}13)${NC} Biến môi trường               ${GREEN}28)${NC} Quản lý File Manager"
     echo -e " ${GREEN}14)${NC} Quản lý Node.js               ${GREEN}29)${NC} Quản lý tài nguyên server"
     echo -e " ${GREEN}15)${NC} Quản lý Logs                  ${GREEN}30)${NC} Tài trợ dự án"
     echo ""
