@@ -420,8 +420,8 @@ clone_ndc_ols() {
         rm -rf "$NDC_INSTALL_DIR"
         mkdir -p "$NDC_INSTALL_DIR"
         
-        git clone "$GITHUB_REPO" "$NDC_INSTALL_DIR" >/dev/null 2>&1 || {
-            print_error "Failed to clone repository"
+        git clone "$GITHUB_REPO" "$NDC_INSTALL_DIR" || {
+            print_error "Failed to clone repository from $GITHUB_REPO"
             exit 1
         }
     fi
