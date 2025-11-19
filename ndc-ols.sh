@@ -27,9 +27,9 @@ show_banner() {
     clear
     echo -e "${CYAN}"
     echo "════════════════════════════════════════════════════════════"
-    echo "               ${BWHITE}NDC OLS${CYAN} - Node & React Management"
+    echo -e "               ${BWHITE}NDC OLS${CYAN} - Node & React Management"
     echo "           OpenSource VPS Management for Node.js"
-    echo "                   Version ${BWHITE}$NDC_VERSION${CYAN}"
+    echo -e "                   Version ${BWHITE}$NDC_VERSION${CYAN}"
     echo "════════════════════════════════════════════════════════════"
     echo -e "${NC}"
 }
@@ -43,7 +43,7 @@ show_system_info() {
     local free_disk=$(get_free_disk)
     local public_ip=$(get_public_ip)
     
-    echo -e "${IBLACK}Server IP: ${CYAN}$public_ip${IBLACK} | CPU: ${CYAN}${cpu_cores} cores${IBLACK} | RAM: ${CYAN}${total_ram}GB${IBLACK} | Disk: ${CYAN}${free_disk}GB free${NC}"
+    echo -e "${NC}Server IP: ${GREEN}$public_ip${NC} | CPU: ${GREEN}${cpu_cores} cores${NC} | RAM: ${GREEN}${total_ram}GB${NC} | Disk: ${GREEN}${free_disk}GB free${NC}"
     echo ""
 }
 
