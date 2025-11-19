@@ -77,11 +77,28 @@ show_system_info() {
 
 
 #######################################
+# Show menu header (Simplified)
+#######################################
+show_menu_header() {
+    clear
+    printf "%b" "${CYAN}"
+    printf "%b" "+-----------------------------------------------------------------------+\n"
+    printf "%b" "|                                                                       |\n"
+    printf "%b" "|                       ${BOLD}NDC OLS${CYAN} phiên bản: ${BOLD}$NDC_VERSION${CYAN}                        |\n"
+    printf "%b" "|                       Phát triển bởi: Nguyễn ĐC                       |\n"
+    printf "%b" "|                                                                       |\n"
+    printf "%b" "+-----------------------------------------------------------------------+\n"
+    printf "%b" "=========================================================================\n"
+    printf "%b" "Tình trạng máy chủ: ${GREEN}Hoạt động tốt${CYAN}\n"
+    printf "%b" "=========================================================================\n"
+    printf "%b" "${NC}"
+}
+
+#######################################
 # Main menu
 #######################################
 show_main_menu() {
-    show_banner
-    show_system_info
+    show_menu_header
     
     echo ""
     echo -e " ${GREEN}1)${NC}  Quản lý Apps (Node/React)     ${GREEN}16)${NC} Nhân bản dự án"
