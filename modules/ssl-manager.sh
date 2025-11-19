@@ -46,18 +46,50 @@ install_ssl() {
     local domains=()
     local i=1
     
-    # Find domains in sites-available and conf.d
-    while IFS= read -r file; do
-        # Extract server_name from config files
-        if [ -f "$file" ]; then
-            local domain_name=$(grep -m1 "server_name" "$file" | awk '{print $2}' | sed 's/;//')
-            if [ ! -z "$domain_name" ] && [ "$domain_name" != "_" ]; then
-                domains+=("$domain_name")
-                echo -e " ${GREEN}$i)${NC} $domain_name"
-                ((i++))
+    # Find domains in sites-enabled (active domains) and conf.d
+    # Use associative array to avoid duplicates
+    declare -A domain_map
+    
+    # Scan sites-enabled (symlinks)
+    if [ -d "/etc/nginx/sites-enabled" ]; then
+        for file in /etc/nginx/sites-enabled/*; do
+            if [ -f "$file" ]; then
+                # Extract server_name, handle multiple domains on one line, remove semicolon
+                local names=$(grep -m1 "server_name" "$file" | sed 's/server_name//;s/;//' | tr -s ' ')
+                for name in $names; do
+                    if [ ! -z "$name" ] && [ "$name" != "_" ] && [[ ! "$name" =~ ^www\. ]]; then
+                        domain_map["$name"]=1
+                    fi
+                done
             fi
-        fi
-    done < <(find /etc/nginx/sites-available /etc/nginx/conf.d -name "*.conf" 2>/dev/null)
+        done
+    fi
+
+    # Scan conf.d
+    if [ -d "/etc/nginx/conf.d" ]; then
+        for file in /etc/nginx/conf.d/*.conf; do
+            if [ -f "$file" ]; then
+                local names=$(grep -m1 "server_name" "$file" | sed 's/server_name//;s/;//' | tr -s ' ')
+                for name in $names; do
+                    if [ ! -z "$name" ] && [ "$name" != "_" ] && [[ ! "$name" =~ ^www\. ]]; then
+                        domain_map["$name"]=1
+                    fi
+                done
+            fi
+        done
+    fi
+
+    # Convert map to array for display
+    for domain in "${!domain_map[@]}"; do
+        domains+=("$domain")
+    done
+
+    # Display domains
+    if [ ${#domains[@]} -gt 0 ]; then
+        for ((j=0; j<${#domains[@]}; j++)); do
+            echo -e " ${GREEN}$((j+1)))${NC} ${domains[$j]}"
+        done
+    fi
     
     if [ ${#domains[@]} -eq 0 ]; then
         print_warning "No domains found configured in Nginx."
