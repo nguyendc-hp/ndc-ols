@@ -83,12 +83,14 @@ gui_manager_menu() {
     print_header "DATABASE ADMIN GUI"
     echo " 1) Install Mongo Express (MongoDB GUI)"
     echo " 2) Secure Mongo Express with Domain (Nginx Proxy)"
+    echo " 3) Revert to IP Access (Open Port)"
     echo " 0) Back"
     
     read -p "$(echo -e "${CYAN}Enter choice:${NC} ")" choice
     case $choice in
         1) install_mongo_express ;;
         2) secure_mongo_express ;;
+        3) revert_mongo_express_to_ip ;;
         *) return ;;
     esac
 }
@@ -176,6 +178,51 @@ EOF
     else
         press_any_key
     fi
+}
+
+revert_mongo_express_to_ip() {
+    print_header "REVERT TO IP ACCESS"
+    
+    if ! pm2 list | grep -q "mongo-express"; then
+        print_error "Mongo Express is not running!"
+        return
+    fi
+    
+    read_input "Port" "8081" port
+    
+    print_step "Reverting configuration..."
+    
+    # Update config to bind to 0.0.0.0
+    sed -i "s/ME_CONFIG_SITE_HOST: 'localhost'/ME_CONFIG_SITE_HOST: '0.0.0.0'/g" /etc/ndc-ols/mongo-express.config.js
+    sed -i "s/VCAP_APP_HOST: 'localhost'/VCAP_APP_HOST: '0.0.0.0'/g" /etc/ndc-ols/mongo-express.config.js
+    sed -i "s/HOST: 'localhost'/HOST: '0.0.0.0'/g" /etc/ndc-ols/mongo-express.config.js
+    
+    # Restart Mongo Express
+    pm2 restart mongo-express
+    pm2 save
+    
+    # Open firewall
+    if command_exists ufw; then
+        ufw allow $port/tcp
+    elif command_exists firewall-cmd; then
+        firewall-cmd --permanent --add-port=$port/tcp
+        firewall-cmd --reload
+    fi
+    
+    print_success "Mongo Express is now accessible via IP!"
+    print_info "Access: http://YOUR_IP:$port"
+    
+    if ask_yes_no "Do you want to remove the Nginx config for the domain?" "n"; then
+        read_input "Enter Domain to remove" "" domain
+        if [ -f "/etc/nginx/sites-available/$domain" ]; then
+            rm "/etc/nginx/sites-available/$domain"
+            rm "/etc/nginx/sites-enabled/$domain"
+            systemctl reload nginx
+            print_success "Nginx config removed."
+        fi
+    fi
+    
+    press_any_key
 }
 
 secure_mongo_express() {
