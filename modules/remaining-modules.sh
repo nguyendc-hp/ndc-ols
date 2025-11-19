@@ -82,11 +82,13 @@ self_update_menu() {
 gui_manager_menu() {
     print_header "DATABASE ADMIN GUI"
     echo " 1) Install Mongo Express (MongoDB GUI)"
+    echo " 2) Secure Mongo Express with Domain (Nginx Proxy)"
     echo " 0) Back"
     
     read -p "$(echo -e "${CYAN}Enter choice:${NC} ")" choice
     case $choice in
         1) install_mongo_express ;;
+        2) secure_mongo_express ;;
         *) return ;;
     esac
 }
@@ -168,6 +170,92 @@ EOF
     print_info "Access: http://YOUR_IP:$port"
     print_info "User: $gui_user"
     print_info "Pass: $gui_pass"
+    
+    if ask_yes_no "Do you want to secure it with a domain now?" "y"; then
+        secure_mongo_express
+    else
+        press_any_key
+    fi
+}
+
+secure_mongo_express() {
+    print_header "SECURE MONGO EXPRESS"
+    
+    # Check if Mongo Express is running
+    if ! pm2 list | grep -q "mongo-express"; then
+        print_error "Mongo Express is not running! Please install it first."
+        return
+    fi
+    
+    read_input "Enter Domain (e.g., db.yourdomain.com)" "" domain
+    if [ -z "$domain" ]; then
+        print_error "Domain is required!"
+        return
+    fi
+    
+    read_input "Mongo Express Port" "8081" port
+    
+    print_step "Configuring Nginx..."
+    
+    # Create Nginx config
+    cat > "/etc/nginx/sites-available/$domain" <<EOF
+server {
+    listen 80;
+    server_name $domain;
+
+    location / {
+        proxy_pass http://localhost:$port;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+}
+EOF
+
+    # Enable site
+    ln -sf "/etc/nginx/sites-available/$domain" "/etc/nginx/sites-enabled/"
+    
+    # Test and reload Nginx
+    if nginx -t; then
+        systemctl reload nginx
+        print_success "Nginx configured!"
+    else
+        print_error "Nginx configuration failed!"
+        return
+    fi
+    
+    # SSL
+    if ask_yes_no "Install SSL (HTTPS)?" "y"; then
+        certbot --nginx -d "$domain" --non-interactive --agree-tos --email admin@$domain --redirect
+    fi
+    
+    # Secure Mongo Express (Bind to localhost only)
+    print_step "Securing Mongo Express (Closing public port)..."
+    
+    # Update config to bind only to localhost
+    sed -i "s/ME_CONFIG_SITE_HOST: '0.0.0.0'/ME_CONFIG_SITE_HOST: 'localhost'/g" /etc/ndc-ols/mongo-express.config.js
+    sed -i "s/VCAP_APP_HOST: '0.0.0.0'/VCAP_APP_HOST: 'localhost'/g" /etc/ndc-ols/mongo-express.config.js
+    sed -i "s/HOST: '0.0.0.0'/HOST: 'localhost'/g" /etc/ndc-ols/mongo-express.config.js
+    
+    # Restart Mongo Express
+    pm2 restart mongo-express
+    pm2 save
+    
+    # Close firewall port
+    if command_exists ufw; then
+        ufw delete allow $port/tcp
+    elif command_exists firewall-cmd; then
+        firewall-cmd --permanent --remove-port=$port/tcp
+        firewall-cmd --reload
+    fi
+    
+    print_success "Mongo Express is now secured!"
+    print_info "Access: https://$domain"
+    print_info "Public port $port has been closed."
     press_any_key
 }
 
