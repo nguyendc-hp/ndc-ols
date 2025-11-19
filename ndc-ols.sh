@@ -24,7 +24,9 @@ source "$NDC_INSTALL_DIR/utils/validators.sh"
 # Show banner
 #######################################
 show_banner() {
-    clear
+    if [ "$1" != "no-clear" ]; then
+        clear
+    fi
     printf "%b" "${CYAN}"
     printf "%b" "+-----------------------------------------------------------------------+\n"
     printf "%b" "|                                                                       |\n"
@@ -220,7 +222,7 @@ main() {
     
     # Check for arguments
     if [[ "$1" == "--info" ]]; then
-        show_banner
+        show_banner "no-clear"
         show_system_info
         exit 0
     fi
