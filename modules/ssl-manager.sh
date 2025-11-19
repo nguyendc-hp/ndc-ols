@@ -41,7 +41,39 @@ ssl_manager_menu() {
 install_ssl() {
     print_header "INSTALL SSL CERTIFICATE"
     
-    read_input "Enter domain name" "" domain
+    # List available domains from Nginx config
+    print_info "Available domains:"
+    local domains=()
+    local i=1
+    
+    # Find domains in sites-available and conf.d
+    while IFS= read -r file; do
+        # Extract server_name from config files
+        if [ -f "$file" ]; then
+            local domain_name=$(grep -m1 "server_name" "$file" | awk '{print $2}' | sed 's/;//')
+            if [ ! -z "$domain_name" ] && [ "$domain_name" != "_" ]; then
+                domains+=("$domain_name")
+                echo -e " ${GREEN}$i)${NC} $domain_name"
+                ((i++))
+            fi
+        fi
+    done < <(find /etc/nginx/sites-available /etc/nginx/conf.d -name "*.conf" 2>/dev/null)
+    
+    if [ ${#domains[@]} -eq 0 ]; then
+        print_warning "No domains found configured in Nginx."
+        read_input "Enter domain name manually" "" domain
+    else
+        echo ""
+        read -p "$(echo -e "${CYAN}Select domain (1-${#domains[@]}) or enter manually:${NC} ")" selection
+        
+        if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#domains[@]}" ]; then
+            domain="${domains[$((selection-1))]}"
+            print_info "Selected domain: $domain"
+        else
+            domain="$selection"
+        fi
+    fi
+    
     read_input "Enter email for Let's Encrypt" "" email
     
     if ! validate_domain_format "$domain" || ! validate_email_format "$email"; then
@@ -51,11 +83,19 @@ install_ssl() {
     
     print_step "Installing SSL for $domain..."
     
-    if certbot --nginx -d "$domain" -d "www.$domain" --email "$email" --agree-tos --no-eff-email --redirect; then
+    # Check if www subdomain exists in DNS
+    local domain_args="-d $domain"
+    if host "www.$domain" >/dev/null 2>&1; then
+        domain_args="$domain_args -d www.$domain"
+        print_info "Including www.$domain"
+    fi
+    
+    if certbot --nginx $domain_args --email "$email" --agree-tos --no-eff-email --redirect; then
         print_success "SSL installed successfully!"
         print_info "Auto-renewal is configured"
     else
         print_error "Failed to install SSL"
+        print_info "Please check if domain points to this server IP"
     fi
     
     press_any_key
