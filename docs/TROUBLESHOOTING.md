@@ -177,6 +177,23 @@ crontab -e
 # Add: 0 12 * * * /usr/bin/certbot renew --quiet
 ```
 
+### 4. "Connection Refused" after Deploy
+
+**Problem:** Site works on HTTP but fails on HTTPS after redeploying.
+
+**Cause:**
+When you deploy an app (Option 6), NDC OLS creates a **fresh Nginx configuration** listening on Port 80 (HTTP). This **overwrites** any previous SSL settings.
+
+**Solution:**
+You must reinstall SSL after every fresh deployment of the same domain.
+
+```bash
+ndc
+# Select: 3) SSL Management
+# Select: 1) Install SSL
+# Enter domain: yourdomain.com
+```
+
 ## Database Issues
 
 ### 1. Can't Connect to PostgreSQL

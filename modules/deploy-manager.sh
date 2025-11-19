@@ -114,6 +114,11 @@ deploy_full_stack() {
     # 5. Configure Nginx
     print_step "Configuring Nginx..."
     
+    if [ -f "/etc/nginx/sites-available/$domain" ]; then
+        print_warning "Existing config for $domain found. It will be overwritten."
+        print_warning "You will need to reinstall SSL after this step."
+    fi
+    
     cat > "/etc/nginx/sites-available/$domain" <<EOF
 server {
     listen 80;
