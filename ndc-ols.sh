@@ -28,7 +28,7 @@ show_banner() {
     echo -e "${CYAN}"
     echo "+-----------------------------------------------------------------------+"
     echo "|                                                                       |"
-    echo "|                 ${BOLD}NDC OLS${CYAN} phiên bản: ${BOLD}$NDC_VERSION${CYAN}                      |"
+    echo -e "|                 ${BOLD}NDC OLS${CYAN} phiên bản: ${BOLD}$NDC_VERSION${CYAN}                      |"
     echo "|                  Công cụ quản lý VPS Node.js & React                 |"
     echo "|                                                                       |"
     echo "+-----------------------------------------------------------------------+"
