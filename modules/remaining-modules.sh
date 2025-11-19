@@ -106,8 +106,11 @@ install_mongo_express() {
     read_input "GUI Password" "$(generate_password)" gui_pass
     read_input "Port" "8081" port
     
-    # Install
-    npm install -g mongo-express
+    # Uninstall previous version to ensure clean slate
+    npm uninstall -g mongo-express
+    
+    # Install stable version (1.0.2) to avoid RC bugs
+    npm install -g mongo-express@1.0.2
     
     # Get mongo-express path for CWD
     MONGO_EXPRESS_HOME="$(npm root -g)/mongo-express"
@@ -128,6 +131,7 @@ module.exports = {
       ME_CONFIG_BASICAUTH_USERNAME: '$gui_user',
       ME_CONFIG_BASICAUTH_PASSWORD: '$gui_pass',
       ME_CONFIG_SITE_HOST: '0.0.0.0',
+      VCAP_APP_HOST: '0.0.0.0',
       PORT: '$port',
       VCAP_APP_PORT: '$port'
     }
