@@ -499,7 +499,7 @@ show_completion() {
     echo -e "  https://docs.ndc-ols.com"
     echo ""
     echo -e "${CYAN}Support:${NC}"
-    echo -e "  GitHub: https://github.com/ndc-ols"
+    echo -e "  GitHub: https://github.com/nguyendc-hp/ndc-ols"
     echo -e "  Discord: https://discord.gg/ndc-ols"
     echo ""
     echo -e "${GREEN}════════════════════════════════════════════════════════════${NC}"
