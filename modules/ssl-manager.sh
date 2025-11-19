@@ -53,7 +53,7 @@ install_ssl() {
             if [[ ! " ${domains[*]} " =~ " ${domain} " ]]; then
                 domains+=("$domain")
             fi
-        done < <(nginx -T 2>/dev/null | grep "server_name" | sed 's/.*server_name\s*//;s/;//;s/\s/\n/g' | grep -vE "^_$" | grep -vE "^localhost$" | grep -vE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$" | grep -vE "^www\." | sort -u)
+        done < <(nginx -T 2>/dev/null | grep -E "^\s*server_name\s+" | sed 's/^\s*server_name\s*//;s/;//;s/\s/\n/g' | grep -vE "^_$" | grep -vE "^localhost$" | grep -vE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$" | grep -vE "^www\." | sort -u)
     fi
 
     # Display domains
