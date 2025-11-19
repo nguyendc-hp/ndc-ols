@@ -109,11 +109,21 @@ install_mongo_express() {
     # Uninstall previous version to ensure clean slate
     npm uninstall -g mongo-express
     
-    # Install stable version (1.0.2) to avoid RC bugs
-    npm install -g mongo-express@1.0.2
+    # Install stable version 0.54.0 (Most compatible)
+    print_step "Installing Mongo Express (v0.54.0)..."
+    if ! npm install -g mongo-express@0.54.0; then
+        print_warning "v0.54.0 failed. Trying latest version..."
+        npm install -g mongo-express
+    fi
     
     # Get mongo-express path for CWD
     MONGO_EXPRESS_HOME="$(npm root -g)/mongo-express"
+    
+    # Verify installation
+    if [ ! -d "$MONGO_EXPRESS_HOME" ]; then
+        print_error "Mongo Express installation failed. Please check npm logs."
+        return
+    fi
     
     # Start with PM2
     print_step "Starting Mongo Express..."
@@ -132,6 +142,7 @@ module.exports = {
       ME_CONFIG_BASICAUTH_PASSWORD: '$gui_pass',
       ME_CONFIG_SITE_HOST: '0.0.0.0',
       VCAP_APP_HOST: '0.0.0.0',
+      HOST: '0.0.0.0',
       PORT: '$port',
       VCAP_APP_PORT: '$port'
     }
