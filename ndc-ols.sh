@@ -218,6 +218,13 @@ main() {
     # Initialize
     initialize
     
+    # Check for arguments
+    if [[ "$1" == "--info" ]]; then
+        show_banner
+        show_system_info
+        exit 0
+    fi
+    
     # Main loop
     while true; do
         show_main_menu

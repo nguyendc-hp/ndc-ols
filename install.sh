@@ -396,6 +396,24 @@ setup_fail2ban() {
 }
 
 #######################################
+# Setup Login Banner
+#######################################
+setup_login_banner() {
+    print_step "Setting up login banner..."
+    
+    # Create profile script
+    cat > /etc/profile.d/ndc-ols-login.sh <<EOF
+#!/bin/bash
+if [ -f /usr/local/bin/ndc ]; then
+    /usr/local/bin/ndc --info
+fi
+EOF
+    
+    chmod +x /etc/profile.d/ndc-ols-login.sh
+    print_success "Login banner configured"
+}
+
+#######################################
 # Clone NDC OLS repository
 #######################################
 clone_ndc_ols() {
@@ -564,6 +582,7 @@ main() {
     clone_ndc_ols
     create_symlink
     create_config
+    setup_login_banner
     
     # Show completion
     show_completion
