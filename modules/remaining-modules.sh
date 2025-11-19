@@ -94,12 +94,13 @@ gui_manager_menu() {
 install_mongo_express() {
     print_step "Installing Mongo Express..."
     
-    # Check if MongoDB is installed
-    if ! command_exists mongod; then
-        print_error "MongoDB is not installed!"
-        return
+    # Check if MongoDB is running
+    if ! systemctl is-active --quiet mongod; then
+        print_warning "MongoDB is not running. Attempting to start..."
+        systemctl start mongod
+        sleep 2
     fi
-    
+
     # Get config
     read_input "GUI Username" "admin" gui_user
     read_input "GUI Password" "$(generate_password)" gui_pass
@@ -126,10 +127,9 @@ module.exports = {
       ME_CONFIG_MONGODB_SERVER: 'localhost',
       ME_CONFIG_BASICAUTH_USERNAME: '$gui_user',
       ME_CONFIG_BASICAUTH_PASSWORD: '$gui_pass',
+      ME_CONFIG_SITE_HOST: '0.0.0.0',
       PORT: '$port',
-      VCAP_APP_PORT: '$port',
-      VCAP_APP_HOST: '0.0.0.0',
-      HOST: '0.0.0.0'
+      VCAP_APP_PORT: '$port'
     }
   }]
 };
