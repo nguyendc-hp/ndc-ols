@@ -112,14 +112,16 @@ add_domain() {
     echo "  2) React App (Static build)"
     echo "  3) Next.js (SSR)"
     echo "  4) Static website"
+    echo "  5) Full Stack (Static Frontend + Node API)"
     echo ""
-    read_input "Enter choice [1-4]" "1" app_type
+    read_input "Enter choice [1-5]" "1" app_type
     
     case $app_type in
         1) add_nodejs_domain "$domain" ;;
         2) add_react_domain "$domain" ;;
         3) add_nextjs_domain "$domain" ;;
         4) add_static_domain "$domain" ;;
+        5) add_fullstack_domain "$domain" ;;
         *) print_error "Invalid choice"; press_any_key; return ;;
     esac
 }
@@ -532,6 +534,90 @@ reload_nginx() {
         print_success "Nginx reloaded successfully"
     else
         print_error "Nginx config has errors!"
+    fi
+    
+    press_any_key
+}
+
+#######################################
+# Add Full Stack domain
+#######################################
+add_fullstack_domain() {
+    local domain=$1
+    local www_dir="/var/www/$domain"
+    local nginx_conf="/etc/nginx/sites-available/$domain"
+    
+    # Get Backend Port
+    read_input "Enter Backend API port" "5000" port
+    if ! validate_port_format "$port"; then
+        press_any_key
+        return
+    fi
+
+    # Get API Prefix
+    read_input "Enter API path prefix (e.g., /api)" "/api" api_prefix
+
+    # Create directory
+    mkdir -p "$www_dir/public"
+    
+    # Create Nginx config
+    cat > "$nginx_conf" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $domain www.$domain;
+    
+    root $www_dir/public;
+    index index.html index.htm;
+    
+    # Frontend
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+    
+    # Backend API
+    location $api_prefix {
+        proxy_pass http://localhost:$port;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+    }
+
+    # Cache static assets
+    location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+    
+    access_log /var/log/nginx/${domain}_access.log;
+    error_log /var/log/nginx/${domain}_error.log;
+}
+EOF
+    
+    # Enable site
+    ln -sf "$nginx_conf" "/etc/nginx/sites-enabled/$domain" 2>/dev/null || \
+    ln -sf "$nginx_conf" "/etc/nginx/conf.d/$domain.conf"
+    
+    # Test and reload
+    if nginx -t 2>/dev/null; then
+        systemctl reload nginx
+        print_success "Full Stack Domain $domain added successfully!"
+        print_info "1. Upload your React build files to: $www_dir/public"
+        print_info "2. Start your Node.js backend on port $port"
+        print_info "3. Remember to setup SSL (option 3 in main menu)"
+    else
+        print_error "Nginx config test failed!"
+        rm -f "$nginx_conf"
     fi
     
     press_any_key
