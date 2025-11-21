@@ -968,9 +968,12 @@ install_pgadmin() {
     fi
     
     # Find package dir reliably using python
-    PGADMIN_PKG_DIR=$(python -c "import os, pgadmin4; print(os.path.dirname(pgadmin4.__file__))" 2>/dev/null)
+    # Use || true to prevent set -e from exiting if import fails
+    print_info "Locating pgAdmin4 installation..."
+    PGADMIN_PKG_DIR=$(python -c "import os, pgadmin4; print(os.path.dirname(pgadmin4.__file__))" 2>/dev/null || true)
     
     if [ -z "$PGADMIN_PKG_DIR" ]; then
+        print_warning "Python import failed. Searching directory..."
         # Fallback to find
         PGADMIN_PKG_DIR=$(find "$PGADMIN_DIR/venv" -name "pgadmin4" -type d | grep "site-packages" | head -n 1)
     fi
