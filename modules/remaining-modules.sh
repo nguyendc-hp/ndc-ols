@@ -104,6 +104,15 @@ install_mongo_express() {
     # Check if MongoDB is running
     if ! systemctl is-active --quiet mongod; then
         print_warning "MongoDB is not running. Attempting to start..."
+        
+        # Attempt to fix common config error (bindIp indentation)
+        if [ -f "/etc/mongod.conf" ]; then
+            if grep -q "^bindIp:" /etc/mongod.conf; then
+                print_warning "Detected malformed bindIp in /etc/mongod.conf. Fixing indentation..."
+                sed -i 's/^bindIp:/  bindIp:/' /etc/mongod.conf
+            fi
+        fi
+        
         systemctl start mongod
         sleep 5
     fi

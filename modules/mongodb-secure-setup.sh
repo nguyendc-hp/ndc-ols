@@ -34,7 +34,8 @@ if ! grep -q "authorization: enabled" "$CONF_FILE"; then
 fi
 
 # 5. Chỉ cho phép truy cập từ localhost
-sed -i 's/^ *bindIp: .*/bindIp: 127.0.0.1/' "$CONF_FILE"
+# Preserve indentation to avoid breaking YAML
+sed -i 's/^\( *\)bindIp: .*/\1bindIp: 127.0.0.1/' "$CONF_FILE"
 
 # 6. Khởi động lại MongoDB
 systemctl restart mongod
