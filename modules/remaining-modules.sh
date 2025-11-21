@@ -1,10 +1,10 @@
 # GUI Manager
 gui_manager_menu() {
     print_header "ADMIN DATABASE GUI"
-    echo " 1) Install Mongo Express (MongoDB GUI)"
-    echo " 2) Secure Mongo Express with Domain (Nginx Proxy)"
-    echo " 3) Revert to IP Access (Open Port)"
-    echo " 4) Secure MongoDB for Compass (Recommended)"
+    echo " 1) Install/Reinstall Mongo Express"
+    echo " 2) Secure Mongo Express with Domain"
+    echo " 3) Revert Mongo Express to IP"
+    echo " 4) Install/Reinstall phpMyAdmin"
     echo " 0) Back"
     
     read -p "$(echo -e "${CYAN}Enter choice:${NC} ")" choice
@@ -12,7 +12,7 @@ gui_manager_menu() {
         1) install_mongo_express ;;
         2) secure_mongo_express ;;
         3) revert_mongo_express_to_ip ;;
-        4) secure_mongodb_compass ;;
+        4) install_phpmyadmin ;;
         *) return ;;
     esac
 }
@@ -92,215 +92,25 @@ self_update_menu() {
 install_mongo_express() {
     print_step "Installing Mongo Express..."
     
-    # Check if mongosh is installed
-    if ! command -v mongosh &> /dev/null; then
-        print_warning "mongosh is not installed. Installing..."
-        wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | sudo apt-key add -
-        echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
-        apt-get update -qq
-        apt-get install -y mongodb-mongosh
-    fi
-
-    # Check if MongoDB is running
-    if ! systemctl is-active --quiet mongod; then
-        print_warning "MongoDB is not running. Attempting to start..."
-        
-        # Attempt to fix common config error (bindIp indentation)
-        if [ -f "/etc/mongod.conf" ]; then
-            if grep -q "^bindIp:" /etc/mongod.conf; then
-                print_warning "Detected malformed bindIp in /etc/mongod.conf. Fixing indentation..."
-                sed -i 's/^bindIp:/  bindIp:/' /etc/mongod.conf
-            fi
-        fi
-        
-        systemctl start mongod
-        sleep 5
-    fi
-    
-    # Double check if it started
-    if ! systemctl is-active --quiet mongod; then
-        print_error "MongoDB failed to start! Please check logs: journalctl -u mongod"
-        return
-    fi
-
-    print_header "MongoDB Authentication Setup"
-    print_info "Mongo Express requires MongoDB to be secured with user/password."
-    print_info ""
-    
-    # Check if MongoDB is already secured
-    # We use listDatabases because ping can succeed even with auth enabled (public command)
-    if mongosh --quiet --host localhost --port 27017 --eval "db.adminCommand('listDatabases')" &>/dev/null; then
-        # MongoDB is NOT secured (no auth required)
-        print_warning "⚠️  MongoDB is NOT secured yet (no authentication enabled)"
-        print_info ""
-        
-        if ask_yes_no "Would you like to secure MongoDB NOW before installing Mongo Express?" "y"; then
-            print_step "Securing MongoDB..."
-            if ! bash "$NDC_INSTALL_DIR/modules/mongodb-secure-setup.sh"; then
-                print_error "Failed to secure MongoDB!"
-                return
-            fi
-            print_info ""
-            print_info "MongoDB has been secured."
-            print_info "Please enter the Admin credentials you just created in the previous step:"
-            read_input "MongoDB Admin Username" "admin" mongo_user
-            read_input "MongoDB Admin Password" "" mongo_pass
-            
-            if [ -z "$mongo_pass" ]; then
-                print_error "MongoDB password cannot be empty!"
-                return
-            fi
-        else
-            print_error "Mongo Express requires secured MongoDB. Aborted."
-            return
-        fi
+    if [ -f "$NDC_CONFIG_DIR/auth.conf" ]; then
+        source "$NDC_CONFIG_DIR/auth.conf"
     else
-        # MongoDB is likely secured (listDatabases failed)
-        print_success "✅ MongoDB appears to be secured (Authentication required)"
-        print_info ""
-        read_input "MongoDB Admin Username" "admin" mongo_user
-        read_input "MongoDB Admin Password" "" mongo_pass
-        
-        if [ -z "$mongo_pass" ]; then
-            print_error "MongoDB password cannot be empty!"
-            return
-        fi
-    fi
-
-    # Verify MongoDB connection with credentials
-    print_step "Verifying MongoDB connection with provided credentials..."
-    
-    # Use explicit flags for safety and capture output
-    if ! ERR_OUTPUT=$(mongosh --quiet --username "$mongo_user" --password "$mongo_pass" --authenticationDatabase admin --host 127.0.0.1 --port 27017 --eval "db.adminCommand('listDatabases')" 2>&1); then
-        print_error "Failed to connect to MongoDB with provided credentials!"
-        print_info "Error details:"
-        echo -e "${RED}$ERR_OUTPUT${NC}"
-        print_info ""
-        
-        if ask_yes_no "Authentication failed. Would you like to RESET the MongoDB Admin password?" "n"; then
-            print_step "Resetting MongoDB Admin Password..."
-            
-            # 1. Disable Auth
-            print_info "Disabling authentication temporarily..."
-            sed -i 's/authorization: enabled/authorization: disabled/' /etc/mongod.conf
-            systemctl restart mongod
-            
-            print_info "Waiting for MongoDB to restart (no auth)..."
-            sleep 5
-            if ! systemctl is-active --quiet mongod; then
-                print_error "MongoDB failed to start during reset process!"
-                return
-            fi
-            
-            # 2. Create/Update User
-            print_info "Updating admin user..."
-            NEW_PASS="$(head -c 12 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 16)"
-            
-            # Use dropUser + createUser for a clean slate
-            if ! mongosh --quiet --host 127.0.0.1 --port 27017 --eval "
-                use admin;
-                try {
-                    db.dropUser('$mongo_user');
-                    print('Old user dropped (if existed)');
-                } catch(e) { 
-                    print('User did not exist or could not be dropped: ' + e.message);
-                }
-                
-                try {
-                    db.createUser({
-                        user: '$mongo_user',
-                        pwd: '$NEW_PASS',
-                        roles: [ { role: 'root', db: 'admin' } ]
-                    });
-                    print('User created successfully');
-                } catch(e) {
-                    print('Error creating user: ' + e.message);
-                    quit(1);
-                }
-            "; then
-                print_error "Failed to reset password (mongosh command failed)!"
-                # Re-enable auth anyway for safety
-                sed -i 's/authorization: disabled/authorization: enabled/' /etc/mongod.conf
-                systemctl restart mongod
-                return
-            fi
-            
-            # 3. Re-enable Auth
-            print_info "Re-enabling authentication..."
-            sed -i 's/authorization: disabled/authorization: enabled/' /etc/mongod.conf
-            systemctl restart mongod
-            
-            print_info "Waiting for MongoDB to restart (with auth)..."
-            sleep 10
-            
-            if ! systemctl is-active --quiet mongod; then
-                print_error "MongoDB failed to start after enabling auth!"
-                return
-            fi
-            
-            print_success "Password reset successfully!"
-            print_info "New Password for '$mongo_user': $NEW_PASS"
-            mongo_pass="$NEW_PASS"
-            
-            # Retry verification with loop
-            print_step "Verifying new credentials..."
-            MAX_RETRIES=5
-            COUNT=0
-            while [ $COUNT -lt $MAX_RETRIES ]; do
-                if mongosh --quiet --username "$mongo_user" --password "$mongo_pass" --authenticationDatabase admin --host 127.0.0.1 --port 27017 --eval "db.adminCommand('listDatabases')" &>/dev/null; then
-                    print_success "✅ MongoDB connection verified with new password!"
-                    break
-                fi
-                COUNT=$((COUNT+1))
-                print_warning "Verification attempt $COUNT failed. Retrying in 3s..."
-                sleep 3
-            done
-            
-            if [ $COUNT -eq $MAX_RETRIES ]; then
-                 print_error "Still failed to verify after reset. Please check logs."
-                 print_info "Try running manually: mongosh -u $mongo_user -p $mongo_pass --authenticationDatabase admin"
-                 return
-            fi
-        else
-            print_info "Troubleshooting:"
-            print_info "  1. Check if username '$mongo_user' is correct."
-            print_info "  2. Check if password is correct."
-            return
-        fi
-    fi
-    print_success "✅ MongoDB connection verified!"
-
-    # Get Mongo Express GUI credentials
-    print_info ""
-    read_input "Mongo Express GUI Username" "admin" gui_user
-    read_input "Mongo Express GUI Password" "$(generate_password)" gui_pass
-    read_input "Port" "8081" port
-    
-    # Uninstall previous version to ensure clean slate
-    npm uninstall -g mongo-express 2>/dev/null || true
-    
-    # Install latest version (compatible with MongoDB 7.x)
-    print_step "Installing Mongo Express (latest version)..."
-    if ! npm install -g mongo-express; then
-        print_error "Mongo Express installation failed. Please check npm logs."
+        print_error "Credentials not found! Please check $NDC_CONFIG_DIR/auth.conf"
         return
     fi
+
+    # Install
+    npm install -g mongo-express >/dev/null 2>&1
     
-    # Get mongo-express path for CWD
     MONGO_EXPRESS_HOME="$(npm root -g)/mongo-express"
     
-    # Verify installation
     if [ ! -d "$MONGO_EXPRESS_HOME" ]; then
-        print_error "Mongo Express installation failed. Directory not found: $MONGO_EXPRESS_HOME"
+        print_error "Mongo Express install failed"
         return
     fi
     
-    # Start with PM2
-    print_step "Configuring Mongo Express with MongoDB authentication..."
-    
-    # Create ecosystem file with full MongoDB authentication
-    # Note: ME_CONFIG_MONGODB_ENABLE_ADMIN must be 'true' for admin auth
-    cat > "/etc/ndc-ols/mongo-express.config.js" <<EOFCONFIG
+    # Configure
+    cat > "$NDC_CONFIG_DIR/mongo-express.config.js" <<EOF
 module.exports = {
   apps: [{
     name: 'mongo-express',
@@ -312,68 +122,119 @@ module.exports = {
     env: {
       NODE_ENV: 'production',
       ME_CONFIG_MONGODB_ENABLE_ADMIN: 'true',
-      ME_CONFIG_MONGODB_SERVER: 'localhost',
+      ME_CONFIG_MONGODB_SERVER: '127.0.0.1',
       ME_CONFIG_MONGODB_PORT: '27017',
       ME_CONFIG_MONGODB_AUTH_DATABASE: 'admin',
-      ME_CONFIG_MONGODB_AUTH_USERNAME: '$mongo_user',
-      ME_CONFIG_MONGODB_AUTH_PASSWORD: '$mongo_pass',
-      ME_CONFIG_BASICAUTH_USERNAME: '$gui_user',
-      ME_CONFIG_BASICAUTH_PASSWORD: '$gui_pass',
+      ME_CONFIG_MONGODB_AUTH_USERNAME: '$MONGODB_USER',
+      ME_CONFIG_MONGODB_AUTH_PASSWORD: '$MONGODB_PASS',
+      ME_CONFIG_BASICAUTH_USERNAME: '$MONGO_EXPRESS_USER',
+      ME_CONFIG_BASICAUTH_PASSWORD: '$MONGO_EXPRESS_PASS',
       ME_CONFIG_SITE_HOST: '0.0.0.0',
       ME_CONFIG_SITE_BASEURL: '/',
       ME_CONFIG_SITE_COOKIE_SECRET: 'secret_$(date +%s)',
       ME_CONFIG_SITE_SESSION_SECRET: 'secret_$(date +%s)',
       VCAP_APP_HOST: '0.0.0.0',
-      PORT: '$port'
+      PORT: '8081'
     }
   }]
 };
-EOFCONFIG
+EOF
 
-    # Stop and delete existing process if it exists to ensure config update
-    pm2 delete mongo-express 2>/dev/null || true
-    sleep 1
-
-    # Start Mongo Express with new config
-    print_step "Starting Mongo Express..."
-    if ! pm2 start "/etc/ndc-ols/mongo-express.config.js"; then
-        print_error "Failed to start Mongo Express with PM2!"
-        return
-    fi
-    
+    # Start
+    pm2 start "$NDC_CONFIG_DIR/mongo-express.config.js"
     pm2 save
-    sleep 2
-    
-    # Verify Mongo Express started successfully
-    if ! pm2 list | grep -q "mongo-express"; then
-        print_error "Mongo Express failed to start!"
-        print_info "Run: pm2 logs mongo-express"
-        return
-    fi
     
     # Open firewall
     if command_exists ufw; then
-        ufw allow $port/tcp 2>/dev/null || true
+        ufw allow 8081/tcp >/dev/null 2>&1
     elif command_exists firewall-cmd; then
-        firewall-cmd --permanent --add-port=$port/tcp 2>/dev/null || true
-        firewall-cmd --reload 2>/dev/null || true
+        firewall-cmd --permanent --add-port=8081/tcp >/dev/null 2>&1
+        firewall-cmd --reload >/dev/null 2>&1
     fi
     
-    print_success "Mongo Express installed and started successfully!"
-    print_info "======================================"
-    print_info "Access: http://YOUR_IP:$port"
-    print_info "GUI Username: $gui_user"
-    print_info "GUI Password: $gui_pass"
-    print_info "MongoDB User: $mongo_user"
-    print_info "======================================"
-    print_info "To view logs: pm2 logs mongo-express"
-    print_info "To restart: pm2 restart mongo-express"
+    print_success "Mongo Express installed (Port 8081)"
+    print_info "User: $MONGO_EXPRESS_USER"
+    print_info "Pass: $MONGO_EXPRESS_PASS"
+    press_any_key
+}
+
+install_phpmyadmin() {
+    print_step "Installing phpMyAdmin..."
     
-    if ask_yes_no "Do you want to secure it with a domain now?" "y"; then
-        secure_mongo_express
-    else
-        press_any_key
+    if [ -d "/usr/share/phpmyadmin" ]; then
+        print_warning "phpMyAdmin already installed."
+        if ! ask_yes_no "Reinstall phpMyAdmin?" "n"; then
+            return
+        fi
     fi
+    
+    # Install PHP and extensions first
+    print_step "Installing PHP dependencies..."
+    if command_exists apt-get; then
+        apt-get install -y -qq php-fpm php-mysql php-mbstring php-zip php-gd php-json php-curl php-xml >/dev/null 2>&1
+        
+        # Pre-configure debconf for phpmyadmin
+        echo "phpmyadmin phpmyadmin/dbconfig-install boolean true" | debconf-set-selections
+        echo "phpmyadmin phpmyadmin/app-password-confirm password " | debconf-set-selections
+        echo "phpmyadmin phpmyadmin/mysql/admin-pass password " | debconf-set-selections
+        echo "phpmyadmin phpmyadmin/mysql/app-pass password " | debconf-set-selections
+        echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect " | debconf-set-selections
+        
+        apt-get install -y -qq phpmyadmin >/dev/null 2>&1
+    elif command_exists dnf; then
+        dnf install -y -q php php-fpm php-mysqlnd php-mbstring php-zip php-gd php-json php-xml >/dev/null 2>&1
+        if dnf list phpmyadmin >/dev/null 2>&1; then
+            dnf install -y -q phpmyadmin >/dev/null 2>&1
+        else
+            print_warning "phpMyAdmin package not found in default repos. Skipping..."
+            return
+        fi
+    fi
+    
+    # Configure Nginx for phpMyAdmin
+    print_step "Configuring Nginx for phpMyAdmin..."
+    
+    # Create a symlink to web root
+    ln -sf /usr/share/phpmyadmin /var/www/html/phpmyadmin
+    
+    # Create config
+    cat > /etc/nginx/conf.d/phpmyadmin.conf <<EOF
+server {
+    listen 8080;
+    server_name _;
+    root /usr/share/phpmyadmin;
+    index index.php index.html;
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')-fpm.sock;
+    }
+}
+EOF
+
+    # Open port 8080
+    if command_exists ufw; then
+        ufw allow 8080/tcp >/dev/null 2>&1
+    elif command_exists firewall-cmd; then
+        firewall-cmd --permanent --add-port=8080/tcp >/dev/null 2>&1
+        firewall-cmd --reload >/dev/null 2>&1
+    fi
+    
+    systemctl restart nginx
+    
+    print_success "phpMyAdmin installed (Port 8080)"
+    
+    if [ -f "$NDC_CONFIG_DIR/auth.conf" ]; then
+        source "$NDC_CONFIG_DIR/auth.conf"
+        print_info "User: root"
+        print_info "Pass: $MYSQL_ROOT_PASS"
+    fi
+    
+    press_any_key
 }
 
 revert_mongo_express_to_ip() {

@@ -374,7 +374,7 @@ ndc-ols
 ### GUI Tools
 - **pgAdmin** - PostgreSQL admin
 - **Mongo Express** - MongoDB admin
-- **phpMyAdmin** - MySQL admin
+- **phpMyAdmin** - MySQL/MariaDB admin
 - **File Browser** - Web file manager
 
 ---

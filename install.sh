@@ -397,7 +397,30 @@ install_mysql() {
     systemctl enable mariadb
     systemctl start mariadb
     
-    print_success "MariaDB installed"
+    # Secure MariaDB
+    print_step "Securing MariaDB..."
+    
+    MYSQL_ROOT_PASS=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9')
+    
+    # Set root password and secure installation
+    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASS';"
+    mysql -e "DELETE FROM mysql.user WHERE User='';"
+    mysql -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');"
+    mysql -e "DROP DATABASE IF EXISTS test;"
+    mysql -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';"
+    mysql -e "FLUSH PRIVILEGES;"
+    
+    # Save credentials
+    # Append to auth.conf (create if not exists, though mongodb should have created it)
+    if [ ! -f "$NDC_CONFIG_DIR/auth.conf" ]; then
+        mkdir -p "$NDC_CONFIG_DIR"
+        touch "$NDC_CONFIG_DIR/auth.conf"
+        chmod 600 "$NDC_CONFIG_DIR/auth.conf"
+    fi
+    
+    echo "MYSQL_ROOT_PASS=$MYSQL_ROOT_PASS" >> "$NDC_CONFIG_DIR/auth.conf"
+    
+    print_success "MariaDB installed and secured"
 }
 
 #######################################
@@ -425,6 +448,88 @@ install_redis() {
     esac
     
     print_success "Redis installed"
+}
+
+#######################################
+# Install phpMyAdmin
+#######################################
+install_phpmyadmin() {
+    print_step "Installing phpMyAdmin..."
+    
+    if [ -d "/usr/share/phpmyadmin" ]; then
+        print_warning "phpMyAdmin already installed, skipping..."
+        return
+    fi
+    
+    # Install PHP and extensions first
+    print_step "Installing PHP dependencies..."
+    case "$PKG_MANAGER" in
+        apt-get)
+            apt-get install -y -qq php-fpm php-mysql php-mbstring php-zip php-gd php-json php-curl php-xml >/dev/null 2>&1
+            
+            # Pre-configure debconf for phpmyadmin
+            echo "phpmyadmin phpmyadmin/dbconfig-install boolean true" | debconf-set-selections
+            echo "phpmyadmin phpmyadmin/app-password-confirm password " | debconf-set-selections
+            echo "phpmyadmin phpmyadmin/mysql/admin-pass password " | debconf-set-selections
+            echo "phpmyadmin phpmyadmin/mysql/app-pass password " | debconf-set-selections
+            echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect " | debconf-set-selections
+            
+            apt-get install -y -qq phpmyadmin >/dev/null 2>&1
+            ;;
+        dnf)
+            dnf install -y -q php php-fpm php-mysqlnd php-mbstring php-zip php-gd php-json php-xml >/dev/null 2>&1
+            # On RHEL/CentOS, phpMyAdmin is usually in EPEL, assume EPEL is enabled or install from source/remirepo
+            # For simplicity in this script, we'll try dnf install phpmyadmin if available, else skip or warn
+            if dnf list phpmyadmin >/dev/null 2>&1; then
+                dnf install -y -q phpmyadmin >/dev/null 2>&1
+            else
+                print_warning "phpMyAdmin package not found in default repos. Skipping..."
+                return
+            fi
+            ;;
+    esac
+    
+    # Configure Nginx for phpMyAdmin
+    print_step "Configuring Nginx for phpMyAdmin..."
+    
+    # Create a symlink to web root
+    ln -sf /usr/share/phpmyadmin /var/www/html/phpmyadmin
+    
+    # We need to ensure Nginx handles PHP files. 
+    # This usually requires a specific location block in the default config or a dedicated config.
+    # For now, we'll assume the user will access it via a specific port or path that we need to set up.
+    # A simple way is to add a snippet to the default site or create a new conf.
+    
+    # Let's create a dedicated phpmyadmin config
+    cat > /etc/nginx/conf.d/phpmyadmin.conf <<EOF
+server {
+    listen 8080;
+    server_name _;
+    root /usr/share/phpmyadmin;
+    index index.php index.html;
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')-fpm.sock;
+    }
+}
+EOF
+
+    # Open port 8080
+    if command -v ufw >/dev/null; then
+        ufw allow 8080/tcp >/dev/null 2>&1
+    elif command -v firewall-cmd >/dev/null; then
+        firewall-cmd --permanent --add-port=8080/tcp >/dev/null 2>&1
+        firewall-cmd --reload >/dev/null 2>&1
+    fi
+    
+    systemctl restart nginx
+    
+    print_success "phpMyAdmin installed (Port 8080)"
 }
 
 #######################################
@@ -580,6 +685,9 @@ EOF
 # Show completion message
 #######################################
 show_completion() {
+    # Get Public IP
+    SERVER_IP=$(curl -s https://api.ipify.org 2>/dev/null || curl -s https://ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
+    
     clear
     echo ""
     echo -e "${GREEN}════════════════════════════════════════════════════════════${NC}"
@@ -591,7 +699,7 @@ show_completion() {
     echo -e "  ${GREEN}✓${NC} Node.js + NVM"
     echo -e "  ${GREEN}✓${NC} PM2 process manager"
     echo -e "  ${GREEN}✓${NC} MongoDB + Mongo Express"
-    echo -e "  ${GREEN}✓${NC} MariaDB database"
+    echo -e "  ${GREEN}✓${NC} MariaDB + phpMyAdmin"
     echo -e "  ${GREEN}✓${NC} Redis cache"
     echo -e "  ${GREEN}✓${NC} Let's Encrypt SSL"
     echo -e "  ${GREEN}✓${NC} Firewall (UFW/Firewalld)"
@@ -606,9 +714,14 @@ show_completion() {
         echo -e "    Pass: ${YELLOW}$MONGODB_PASS${NC}"
         echo -e ""
         echo -e "  ${BOLD}Mongo Express GUI:${NC}"
-        echo -e "    URL : ${YELLOW}http://YOUR_IP:8081${NC}"
+        echo -e "    URL : ${YELLOW}http://$SERVER_IP:8081${NC}"
         echo -e "    User: ${YELLOW}$MONGO_EXPRESS_USER${NC}"
         echo -e "    Pass: ${YELLOW}$MONGO_EXPRESS_PASS${NC}"
+        echo ""
+        echo -e "  ${BOLD}phpMyAdmin GUI:${NC}"
+        echo -e "    URL : ${YELLOW}http://$SERVER_IP:8080${NC}"
+        echo -e "    User: ${YELLOW}root${NC}"
+        echo -e "    Pass: ${YELLOW}$MYSQL_ROOT_PASS${NC}"
         echo ""
     fi
 
@@ -641,7 +754,7 @@ main() {
     echo ""
     echo -e "${YELLOW}This will install:${NC}"
     echo "  • Nginx, Node.js, PM2"
-    echo "  • MongoDB, Mongo Express, MariaDB, Redis"
+    echo "  • MongoDB, Mongo Express, MariaDB, phpMyAdmin, Redis"
     echo "  • SSL (Let's Encrypt), Firewall, Fail2ban"
     echo ""
     
@@ -678,6 +791,7 @@ main() {
     install_mongo_express
     install_mysql
     install_redis
+    install_phpmyadmin
     install_certbot
     setup_firewall
     setup_fail2ban

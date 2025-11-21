@@ -57,11 +57,12 @@ show_db_credentials() {
         print_warning "No credentials file found at $NDC_CONFIG_DIR/auth.conf"
     fi
     
-    # Check for phpMyAdmin (if installed via other means, though not explicitly managed here yet)
-    if [ -d "/var/www/html/phpmyadmin" ] || [ -f "/etc/nginx/sites-enabled/phpmyadmin" ]; then
-        echo -e "${CYAN}phpMyAdmin:${NC}"
-        echo -e "  URL : ${YELLOW}http://$(get_public_ip)/phpmyadmin${NC}"
-        echo -e "  User: (Use MySQL credentials)"
+    # Check for phpMyAdmin
+    if [ -d "/usr/share/phpmyadmin" ] || [ -f "/etc/nginx/conf.d/phpmyadmin.conf" ]; then
+        echo -e "${CYAN}phpMyAdmin GUI:${NC}"
+        echo -e "  URL : ${YELLOW}http://$(get_public_ip):8080${NC}"
+        echo -e "  User: ${YELLOW}root${NC}"
+        echo -e "  Pass: ${YELLOW}$MYSQL_ROOT_PASS${NC}"
         echo ""
     fi
     
