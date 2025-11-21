@@ -16,15 +16,28 @@ if ! command -v mongosh &> /dev/null; then
 fi
 
 # 3. Tạo user admin
-cat <<EOF > /tmp/create_mongo_user.js
-use admin;
-db.createUser({
-  user: "$MONGO_USER",
-  pwd: "$MONGO_PASS",
-  roles: [ { role: "userAdminAnyDatabase", db: "admin" }, { role: "readWriteAnyDatabase", db: "admin" } ]
-});
-EOF
-mongosh < /tmp/create_mongo_user.js
+echo "Creating admin user..."
+if ! mongosh --quiet --eval "
+  use admin;
+  try {
+    db.createUser({
+      user: '$MONGO_USER',
+      pwd: '$MONGO_PASS',
+      roles: [ { role: 'userAdminAnyDatabase', db: 'admin' }, { role: 'readWriteAnyDatabase', db: 'admin' } ]
+    });
+    print('User created successfully');
+  } catch (e) {
+    if (e.code === 51003) { // User already exists
+       print('User already exists, updating password...');
+       db.changeUserPassword('$MONGO_USER', '$MONGO_PASS');
+    } else {
+       throw e;
+    }
+  }
+"; then
+    echo "Failed to create/update MongoDB user!"
+    exit 1
+fi
 
 # 4. Bật xác thực trong mongod.conf
 CONF_FILE="/etc/mongod.conf"

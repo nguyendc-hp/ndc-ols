@@ -128,17 +128,18 @@ install_mongo_express() {
     print_info ""
     
     # Check if MongoDB is already secured
-    # We use a specific exit code check. 
-    # 0 = Success (No auth needed)
-    # 1 = Error (Could be auth error or connection error)
-    if mongosh --quiet --host localhost --port 27017 --eval "db.adminCommand('ping')" &>/dev/null; then
+    # We use listDatabases because ping can succeed even with auth enabled (public command)
+    if mongosh --quiet --host localhost --port 27017 --eval "db.adminCommand('listDatabases')" &>/dev/null; then
         # MongoDB is NOT secured (no auth required)
         print_warning "⚠️  MongoDB is NOT secured yet (no authentication enabled)"
         print_info ""
         
         if ask_yes_no "Would you like to secure MongoDB NOW before installing Mongo Express?" "y"; then
             print_step "Securing MongoDB..."
-            bash "$NDC_INSTALL_DIR/modules/mongodb-secure-setup.sh"
+            if ! bash "$NDC_INSTALL_DIR/modules/mongodb-secure-setup.sh"; then
+                print_error "Failed to secure MongoDB!"
+                return
+            fi
             print_info ""
             print_info "MongoDB has been secured."
             print_info "Please enter the Admin credentials you just created in the previous step:"
@@ -154,7 +155,7 @@ install_mongo_express() {
             return
         fi
     else
-        # MongoDB is likely secured (or connection failed, but we checked service is up)
+        # MongoDB is likely secured (listDatabases failed)
         print_success "✅ MongoDB appears to be secured (Authentication required)"
         print_info ""
         read_input "MongoDB Admin Username" "admin" mongo_user
@@ -170,16 +171,72 @@ install_mongo_express() {
     print_step "Verifying MongoDB connection with provided credentials..."
     
     # Use explicit flags for safety and capture output
-    if ! ERR_OUTPUT=$(mongosh --quiet --username "$mongo_user" --password "$mongo_pass" --authenticationDatabase admin --host localhost --port 27017 --eval "db.adminCommand('ping')" 2>&1); then
+    if ! ERR_OUTPUT=$(mongosh --quiet --username "$mongo_user" --password "$mongo_pass" --authenticationDatabase admin --host localhost --port 27017 --eval "db.adminCommand('listDatabases')" 2>&1); then
         print_error "Failed to connect to MongoDB with provided credentials!"
         print_info "Error details:"
         echo -e "${RED}$ERR_OUTPUT${NC}"
         print_info ""
-        print_info "Troubleshooting:"
-        print_info "  1. Check if username '$mongo_user' is correct."
-        print_info "  2. Check if password is correct."
-        print_info "  3. Verify user exists: mongosh -u $mongo_user -p ... --authenticationDatabase admin"
-        return
+        
+        if ask_yes_no "Authentication failed. Would you like to RESET the MongoDB Admin password?" "n"; then
+            print_step "Resetting MongoDB Admin Password..."
+            
+            # 1. Disable Auth
+            print_info "Disabling authentication temporarily..."
+            sed -i 's/authorization: enabled/authorization: disabled/' /etc/mongod.conf
+            systemctl restart mongod
+            sleep 5
+            
+            # 2. Create/Update User
+            print_info "Updating admin user..."
+            NEW_PASS="$(head -c 12 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 16)"
+            
+            if ! mongosh --quiet --eval "
+                use admin;
+                try {
+                    db.changeUserPassword('$mongo_user', '$NEW_PASS');
+                    print('Password updated successfully');
+                } catch(e) {
+                    if (e.code === 11000 || e.codeName === 'UserNotFound') {
+                        db.createUser({
+                            user: '$mongo_user',
+                            pwd: '$NEW_PASS',
+                            roles: [ { role: 'userAdminAnyDatabase', db: 'admin' }, { role: 'readWriteAnyDatabase', db: 'admin' } ]
+                        });
+                        print('User created successfully');
+                    } else {
+                        throw e;
+                    }
+                }
+            "; then
+                print_error "Failed to reset password!"
+                # Re-enable auth anyway for safety
+                sed -i 's/authorization: disabled/authorization: enabled/' /etc/mongod.conf
+                systemctl restart mongod
+                return
+            fi
+            
+            # 3. Re-enable Auth
+            print_info "Re-enabling authentication..."
+            sed -i 's/authorization: disabled/authorization: enabled/' /etc/mongod.conf
+            systemctl restart mongod
+            sleep 5
+            
+            print_success "Password reset successfully!"
+            print_info "New Password for '$mongo_user': $NEW_PASS"
+            mongo_pass="$NEW_PASS"
+            
+            # Retry verification
+            if ! mongosh --quiet --username "$mongo_user" --password "$mongo_pass" --authenticationDatabase admin --host localhost --port 27017 --eval "db.adminCommand('listDatabases')" &>/dev/null; then
+                 print_error "Still failed to verify after reset. Please check logs."
+                 return
+            fi
+            print_success "✅ MongoDB connection verified with new password!"
+        else
+            print_info "Troubleshooting:"
+            print_info "  1. Check if username '$mongo_user' is correct."
+            print_info "  2. Check if password is correct."
+            return
+        fi
     fi
     print_success "✅ MongoDB connection verified!"
 
