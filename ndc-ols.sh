@@ -109,7 +109,7 @@ show_main_menu() {
     echo -e " ${GREEN}6)${NC}  Tải mã nguồn ứng dụng         ${GREEN}21)${NC} Thông tin Server"
     echo -e " ${GREEN}7)${NC}  Quản lý Service (PM2)         ${GREEN}22)${NC} Bảo mật & Tường lửa"
     echo -e " ${GREEN}8)${NC}  Quản lý Mở/Khóa IP            ${GREEN}23)${NC} Cập nhật NDC OLS"
-    echo -e " ${GREEN}9)${NC}  Quản lý SSH/SFTP              ${GREEN}24)${NC} Quản lý PhpMyAdmin"
+    echo -e " ${GREEN}9)${NC}  Quản lý SSH/SFTP              ${GREEN}24)${NC} Admin Database GUI"
     echo -e " ${GREEN}10)${NC} Cập nhật Webserver            ${GREEN}25)${NC} Báo lỗi"
     echo -e " ${GREEN}11)${NC} Cấu hình Cache                ${GREEN}26)${NC} Quản lý Swap/Memory"
     echo -e " ${GREEN}12)${NC} Cấu hình Nginx                ${GREEN}27)${NC} Chuyển website"

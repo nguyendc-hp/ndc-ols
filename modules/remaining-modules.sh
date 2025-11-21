@@ -19,21 +19,30 @@ env_manager_menu() {
 clone_manager_menu() { print_header "CLONE PROJECT"; print_info "Coming soon"; press_any_key; }
 
 # Source Manager
-source_manager_menu() {
-    read_input "App name" "" app
-    cd "/var/www/$app" && bash
+gui_manager_menu() {
+    print_header "ADMIN DATABASE GUI"
+    echo " 1) Install Mongo Express (MongoDB GUI)"
+    echo " 2) Secure Mongo Express with Domain (Nginx Proxy)"
+    echo " 3) Revert to IP Access (Open Port)"
+    echo " 4) Secure MongoDB for Compass (Recommended)"
+    echo " 0) Back"
+    
+    read -p "$(echo -e \"${CYAN}Enter choice:${NC} \" )" choice
+    case $choice in
+        1) install_mongo_express ;;
+        2) secure_mongo_express ;;
+        3) revert_mongo_express_to_ip ;;
+        4) secure_mongodb_compass ;;
+        *) return ;;
+    esac
 }
 
-# Permission Manager
-permission_manager_menu() {
-    read_input "App directory" "/var/www" dir
-    chown -R www-data:www-data "$dir"
-    find "$dir" -type d -exec chmod 755 {} \;
-    find "$dir" -type f -exec chmod 644 {} \;
-    print_success "Permissions fixed"
+secure_mongodb_compass() {
+    print_header "SECURE MONGODB FOR COMPASS"
+    print_step "Tự động hóa bảo mật MongoDB cho Compass..."
+    bash "$NDC_INSTALL_DIR/modules/mongodb-secure-setup.sh"
     press_any_key
 }
-
 # Redis Manager
 redis_manager_menu() {
     print_header "REDIS CACHE"
