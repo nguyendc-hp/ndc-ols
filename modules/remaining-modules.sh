@@ -99,26 +99,60 @@ install_mongo_express() {
         sleep 2
     fi
 
-    # Get MongoDB credentials
-    print_info "MongoDB must be secured with user/password for Mongo Express to work properly."
-    read_input "MongoDB Admin Username" "admin_823b82" mongo_user
-    read_input "MongoDB Admin Password" "" mongo_pass
+    print_header "MongoDB Authentication Setup"
+    print_info "Mongo Express requires MongoDB to be secured with user/password."
+    print_info ""
     
-    if [ -z "$mongo_pass" ]; then
-        print_error "MongoDB password cannot be empty!"
-        return
+    # Check if MongoDB is already secured
+    if echo "db.adminCommand('ping')" | mongosh "mongodb://localhost:27017/admin" &>/dev/null 2>&1; then
+        # MongoDB is NOT secured (no auth required)
+        print_warning "⚠️  MongoDB is NOT secured yet (no authentication enabled)"
+        print_info ""
+        
+        if ask_yes_no "Would you like to secure MongoDB NOW before installing Mongo Express?" "y"; then
+            print_step "Securing MongoDB..."
+            bash "$NDC_INSTALL_DIR/modules/mongodb-secure-setup.sh"
+            print_info ""
+            print_info "MongoDB has been secured. Please provide the credentials below:"
+            read_input "MongoDB Admin Username (from security setup)" "admin_823b82" mongo_user
+            read_input "MongoDB Admin Password (from security setup)" "" mongo_pass
+            
+            if [ -z "$mongo_pass" ]; then
+                print_error "MongoDB password cannot be empty!"
+                return
+            fi
+        else
+            print_error "Mongo Express requires secured MongoDB. Aborted."
+            return
+        fi
+    else
+        # MongoDB is already secured
+        print_success "✅ MongoDB is already secured"
+        print_info ""
+        read_input "MongoDB Admin Username" "admin_823b82" mongo_user
+        read_input "MongoDB Admin Password" "" mongo_pass
+        
+        if [ -z "$mongo_pass" ]; then
+            print_error "MongoDB password cannot be empty!"
+            return
+        fi
     fi
 
     # Verify MongoDB connection with credentials
     print_step "Verifying MongoDB connection with provided credentials..."
     if ! echo "db.adminCommand('ping')" | mongosh "mongodb://$mongo_user:$mongo_pass@localhost:27017/admin?authSource=admin" &>/dev/null; then
         print_error "Failed to connect to MongoDB with provided credentials!"
-        print_info "Please ensure MongoDB is secured and credentials are correct."
+        print_info "Please ensure credentials are correct."
+        print_info "Troubleshooting:"
+        print_info "  1. Check MongoDB is running: systemctl status mongod"
+        print_info "  2. Verify user exists: mongosh > use admin > db.getUser('$mongo_user')"
+        print_info "  3. Check mongod.conf has: security.authorization: enabled"
         return
     fi
-    print_success "MongoDB connection verified!"
+    print_success "✅ MongoDB connection verified!"
 
     # Get Mongo Express GUI credentials
+    print_info ""
     read_input "Mongo Express GUI Username" "admin" gui_user
     read_input "Mongo Express GUI Password" "$(generate_password)" gui_pass
     read_input "Port" "8081" port
@@ -300,41 +334,33 @@ secure_mongo_express() {
     
     read_input "Mongo Express Port" "$CURRENT_PORT" port
     
-    print_step "Configuring Nginx reverse proxy..."
+    print_step "Creating Nginx HTTP config (for Let's Encrypt validation)..."
     
-    # Create Nginx config with proper headers
-    cat > "/etc/nginx/sites-available/$domain" <<'EOFNGINX'
+    # First create HTTP-only config for Let's Encrypt
+    cat > "/etc/nginx/sites-available/$domain" <<'EOFNGINX_HTTP'
 server {
     listen 80;
+    listen [::]:80;
     server_name DOMAIN_NAME;
 
-    # Redirect HTTP to HTTPS (if SSL is enabled)
-    # Uncomment after installing SSL
-    # return 301 https://$server_name$request_uri;
+    # Allow Let's Encrypt validation
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
 
+    # Redirect all other traffic to HTTPS
     location / {
-        proxy_pass http://localhost:PORT_NUM;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-        proxy_read_timeout 90;
+        return 301 https://$server_name$request_uri;
     }
 }
-EOFNGINX
+EOFNGINX_HTTP
 
-    # Replace placeholders
     sed -i "s|DOMAIN_NAME|$domain|g" /etc/nginx/sites-available/$domain
-    sed -i "s|PORT_NUM|$port|g" /etc/nginx/sites-available/$domain
 
     # Enable site
     ln -sf "/etc/nginx/sites-available/$domain" "/etc/nginx/sites-enabled/" || true
     
-    # Test and reload Nginx
+    # Test Nginx
     if ! nginx -t 2>/dev/null; then
         print_error "Nginx configuration test failed!"
         rm "/etc/nginx/sites-available/$domain"
@@ -342,22 +368,115 @@ EOFNGINX
     fi
     
     systemctl reload nginx
-    print_success "Nginx configured!"
+    print_success "Nginx HTTP config created!"
 
-    # SSL
-    if ask_yes_no "Install SSL Certificate (HTTPS) with Let's Encrypt?" "y"; then
-        if command_exists certbot; then
-            print_step "Installing SSL certificate for $domain..."
-            if certbot --nginx -d "$domain" --non-interactive --agree-tos --email "admin@$domain" --redirect 2>/dev/null; then
-                print_success "SSL certificate installed!"
-            else
-                print_warning "SSL installation failed. Domain still accessible via HTTP."
-            fi
-        else
-            print_warning "Certbot not installed. Skipping SSL setup."
-            print_info "To install later: apt install certbot python3-certbot-nginx"
-        fi
+    # Install SSL with Certbot
+    print_step "Installing SSL Certificate with Let's Encrypt..."
+    
+    if ! command_exists certbot; then
+        print_warning "Certbot not installed. Installing..."
+        apt update -qq
+        apt install -y certbot python3-certbot-nginx
     fi
+
+    # Create certbot directories
+    mkdir -p /var/www/certbot
+
+    # Install SSL certificate
+    if ! certbot certonly --webroot -w /var/www/certbot -d "$domain" --non-interactive --agree-tos --email "admin@$domain" --quiet 2>/dev/null; then
+        print_error "Failed to obtain SSL certificate for $domain"
+        print_info "Please check domain DNS and try again manually:"
+        print_info "  certbot certonly --webroot -w /var/www/certbot -d $domain"
+        rm "/etc/nginx/sites-available/$domain"
+        return
+    fi
+
+    print_success "SSL certificate obtained!"
+    
+    print_step "Creating Nginx HTTPS config with proper proxy headers..."
+    
+    # Now create full HTTPS config with proxy
+    cat > "/etc/nginx/sites-available/$domain" <<'EOFNGINX_HTTPS'
+# HTTP redirect to HTTPS
+server {
+    listen 80;
+    listen [::]:80;
+    server_name DOMAIN_NAME;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$server_name$request_uri;
+    }
+}
+
+# HTTPS server with Mongo Express proxy
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name DOMAIN_NAME;
+
+    # SSL configuration
+    ssl_certificate /etc/letsencrypt/live/DOMAIN_NAME/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/DOMAIN_NAME/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # Security headers
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # Proxy to Mongo Express
+    location / {
+        proxy_pass http://localhost:PORT_NUM;
+        
+        # HTTP version and upgrade
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        
+        # Host and forwarding
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $server_name;
+        proxy_set_header X-Forwarded-Port 443;
+        
+        # Cache and timeout
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 90;
+        proxy_connect_timeout 90;
+        proxy_send_timeout 90;
+        
+        # Buffering
+        proxy_buffering on;
+        proxy_buffer_size 4k;
+        proxy_buffers 8 4k;
+    }
+}
+EOFNGINX_HTTPS
+
+    # Replace placeholders
+    sed -i "s|DOMAIN_NAME|$domain|g" /etc/nginx/sites-available/$domain
+    sed -i "s|PORT_NUM|$port|g" /etc/nginx/sites-available/$domain
+
+    # Test and reload Nginx
+    if ! nginx -t 2>/dev/null; then
+        print_error "Nginx HTTPS configuration test failed!"
+        rm "/etc/nginx/sites-available/$domain"
+        return
+    fi
+    
+    systemctl reload nginx
+    print_success "Nginx HTTPS config applied!"
 
     # Update Mongo Express config to bind to localhost only
     print_step "Securing Mongo Express (binding to localhost only)..."
@@ -380,14 +499,17 @@ EOFNGINX
         firewall-cmd --reload 2>/dev/null || true
     fi
     
-    print_success "Mongo Express is now secured!"
+    print_success "Mongo Express is now fully secured with HTTPS!"
     print_info "======================================"
-    print_info "Access: http://$domain (or https://$domain if SSL enabled)"
-    print_info "Public port $port has been closed."
-    print_info "Only accessible via domain."
+    print_info "✅ Access: https://$domain"
+    print_info "✅ SSL Certificate: Let's Encrypt (auto-renew)"
+    print_info "✅ HTTP redirects to HTTPS"
+    print_info "✅ Public port $port is closed"
+    print_info "✅ Only accessible via domain"
     print_info "======================================"
     print_info "To restart: pm2 restart mongo-express"
     print_info "To view logs: pm2 logs mongo-express"
+    print_info "SSL renewal: certbot renew (auto)"
     
     press_any_key
 }
