@@ -1173,6 +1173,10 @@ clone_ndc_ols() {
         cp -r "$(dirname "$0")"/* "$NDC_INSTALL_DIR/"
     else
         # Remote installation
+        # Ensure we are not inside the directory we are about to delete
+        # (Previous steps like install_pgadmin might have cd'ed into it)
+        cd "$HOME" || cd /tmp
+        
         # Remove existing directory if it exists to avoid clone errors
         rm -rf "$NDC_INSTALL_DIR"
         mkdir -p "$NDC_INSTALL_DIR"
