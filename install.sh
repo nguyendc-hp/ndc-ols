@@ -302,7 +302,24 @@ EOF
     systemctl start mongod
     
     # Wait for MongoDB to start
-    sleep 5
+    print_info "Waiting for MongoDB to start..."
+    local max_retries=30
+    local count=0
+    local mongo_ready=0
+    
+    while [ $count -lt $max_retries ]; do
+        if mongosh --quiet --eval "db.runCommand({ ping: 1 })" >/dev/null 2>&1; then
+            mongo_ready=1
+            break
+        fi
+        sleep 1
+        count=$((count+1))
+    done
+    
+    if [ $mongo_ready -eq 0 ]; then
+        print_error "MongoDB failed to start or is not responsive."
+        return
+    fi
     
     # Secure MongoDB
     print_step "Securing MongoDB..."
@@ -313,18 +330,26 @@ EOF
     MONGO_EXPRESS_PASS=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9')
     
     # Create admin user
-    mongosh --quiet --eval "
+    print_info "Creating admin user..."
+    if mongosh --quiet --eval "
       use admin;
       db.createUser({
         user: 'admin',
         pwd: '$MONGO_ADMIN_PASS',
         roles: [ { role: 'root', db: 'admin' } ]
       });
-    "
+    " >/dev/null; then
+        print_success "MongoDB admin user created."
+    else
+        print_error "Failed to create MongoDB admin user."
+        # Don't return, try to continue but warn
+    fi
     
     # Enable auth
     sed -i 's/^#security:/security:/' /etc/mongod.conf 2>/dev/null || echo "security:" >> /etc/mongod.conf
-    sed -i 's/^security:/security:\n  authorization: enabled/' /etc/mongod.conf
+    if ! grep -q "authorization: enabled" /etc/mongod.conf; then
+        sed -i 's/^security:/security:\n  authorization: enabled/' /etc/mongod.conf
+    fi
     
     # Fix bindIp if needed (ensure localhost)
     sed -i 's/bindIp: .*/bindIp: 127.0.0.1/' /etc/mongod.conf
@@ -364,37 +389,46 @@ install_mongo_express() {
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
     
     # Create directory for mongo-express local install
-    # Global install can be flaky with paths
     MONGO_EXPRESS_DIR="$NDC_INSTALL_DIR/mongo-express"
+    
+    # Clean up previous installs to avoid conflicts
+    rm -rf "$MONGO_EXPRESS_DIR"
     mkdir -p "$MONGO_EXPRESS_DIR"
     
-    print_info "Installing Mongo Express locally in $MONGO_EXPRESS_DIR..."
+    print_info "Installing Mongo Express from GitHub (Source)..."
     cd "$MONGO_EXPRESS_DIR"
     
-    # Initialize dummy package.json to avoid warnings
-    if [ ! -f package.json ]; then
-        npm init -y >/dev/null 2>&1
+    # Clone from GitHub to get full source including assets build scripts
+    if ! git clone https://github.com/mongo-express/mongo-express.git .; then
+        print_error "Failed to clone Mongo Express repository"
+        return
     fi
     
-    # Install mongo-express locally (latest version)
-    print_info "Installing Mongo Express packages..."
-    npm install mongo-express@latest
-    
-    # FIX: Build assets manually because npm package might miss them in RC versions
-    if [ -d "$MONGO_EXPRESS_DIR/node_modules/mongo-express" ]; then
-        print_info "Building Mongo Express assets..."
-        cd "$MONGO_EXPRESS_DIR/node_modules/mongo-express"
-        npm install --silent >/dev/null 2>&1
-        npm run build >/dev/null 2>&1
-        cd "$MONGO_EXPRESS_DIR"
+    # Install dependencies
+    print_info "Installing dependencies..."
+    if ! npm install; then
+        print_error "Failed to install Mongo Express dependencies"
+        return
     fi
     
-    # Path to app.js in local install
-    MONGO_EXPRESS_SCRIPT="$MONGO_EXPRESS_DIR/node_modules/mongo-express/app.js"
+    # Build assets
+    print_info "Building assets..."
+    if ! npm run build; then
+        print_error "Failed to build Mongo Express assets"
+        return
+    fi
+    
+    # Path to app.js in cloned repo
+    MONGO_EXPRESS_SCRIPT="$MONGO_EXPRESS_DIR/app.js"
     
     if [ ! -f "$MONGO_EXPRESS_SCRIPT" ]; then
-        print_error "Mongo Express install failed (script not found at $MONGO_EXPRESS_SCRIPT)"
-        return
+        # Fallback if app.js is not in root (some versions use index.js or lib/app)
+        if [ -f "$MONGO_EXPRESS_DIR/index.js" ]; then
+            MONGO_EXPRESS_SCRIPT="$MONGO_EXPRESS_DIR/index.js"
+        else
+            print_error "Mongo Express install failed (script not found)"
+            return
+        fi
     fi
     
     # Configure
@@ -403,7 +437,7 @@ module.exports = {
   apps: [{
     name: 'mongo-express',
     script: '$MONGO_EXPRESS_SCRIPT',
-    cwd: '$MONGO_EXPRESS_DIR/node_modules/mongo-express',
+    cwd: '$MONGO_EXPRESS_DIR',
     instances: 1,
     autorestart: true,
     watch: false,
@@ -436,10 +470,10 @@ EOF
     pm2 save
     
     # Wait and check if it's running
-    sleep 5
+    sleep 10
     if ! pm2 list | grep -q "mongo-express.*online"; then
         print_error "Mongo Express failed to start. Checking logs..."
-        pm2 logs mongo-express --lines 20 --nostream
+        pm2 logs mongo-express --lines 50 --nostream
         print_warning "Attempting to restart..."
         pm2 restart mongo-express
         sleep 5
