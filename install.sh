@@ -590,8 +590,6 @@ install_mysql() {
     # Check if already installed
     if command -v mysql >/dev/null 2>&1; then
         print_warning "MySQL/MariaDB already installed."
-        # If installed, we still want to ensure it's running and try to secure it if possible,
-        # or at least not fail if we can't.
     else
         wait_for_apt
         case "$PKG_MANAGER" in
@@ -605,7 +603,26 @@ install_mysql() {
     fi
     
     systemctl enable mariadb
-    systemctl start mariadb
+    
+    # Try to start, if fail, try to fix
+    if ! systemctl start mariadb; then
+        print_warning "MariaDB failed to start. Attempting to repair..."
+        
+        systemctl stop mariadb 2>/dev/null || true
+        pkill -9 -f mariadbd 2>/dev/null || true
+        pkill -9 -f mysqld 2>/dev/null || true
+        
+        # Check for lock file
+        rm -f /var/run/mysqld/mysqld.sock
+        rm -f /var/lib/mysql/mysql.sock
+        
+        # Try start again
+        if ! systemctl start mariadb; then
+             print_error "MariaDB failed to start even after repair attempt."
+             print_info "Please check logs: journalctl -xeu mariadb.service"
+             return
+        fi
+    fi
     
     # Wait for MariaDB to be ready
     print_info "Waiting for MariaDB to start..."
@@ -618,6 +635,17 @@ install_mysql() {
         sleep 1
         count=$((count+1))
     done
+
+    # Check if we have credentials and they work
+    if [ -f "$NDC_CONFIG_DIR/auth.conf" ]; then
+        source "$NDC_CONFIG_DIR/auth.conf"
+        if [ -n "$MYSQL_ROOT_PASS" ]; then
+            if mysql -u root -p"$MYSQL_ROOT_PASS" -e "SELECT 1" >/dev/null 2>&1; then
+                print_success "MariaDB is already secured and running. Skipping setup."
+                return
+            fi
+        fi
+    fi
     
     # Secure MariaDB
     print_step "Securing MariaDB..."
