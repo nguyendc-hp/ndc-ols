@@ -133,6 +133,9 @@ wait_for_apt() {
             if [ -n "$running_proc" ]; then
                 if [ $((i % 10)) -eq 0 ]; then
                     print_info "Process '$running_proc' is running (System Update). Waiting..."
+                    if [ "$running_proc" = "unattended-upgrades" ] && [ $i -gt 15 ]; then
+                         echo -e "${YELLOW}   (Hint: This is an automatic OS update. To force stop: Open new terminal -> 'sudo systemctl stop unattended-upgrades')${NC}"
+                    fi
                 fi
                 stale_lock_count=0
             else
