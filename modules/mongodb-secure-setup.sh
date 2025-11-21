@@ -23,13 +23,13 @@ if ! mongosh --quiet --eval "
     db.createUser({
       user: '$MONGO_USER',
       pwd: '$MONGO_PASS',
-      roles: [ { role: 'userAdminAnyDatabase', db: 'admin' }, { role: 'readWriteAnyDatabase', db: 'admin' } ]
+      roles: [ { role: 'root', db: 'admin' } ]
     });
     print('User created successfully');
   } catch (e) {
     if (e.code === 51003) { // User already exists
-       print('User already exists, updating password...');
-       db.changeUserPassword('$MONGO_USER', '$MONGO_PASS');
+       print('User already exists, updating password and roles...');
+       db.updateUser('$MONGO_USER', { pwd: '$MONGO_PASS', roles: [ { role: 'root', db: 'admin' } ] });
     } else {
        throw e;
     }

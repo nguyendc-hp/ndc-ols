@@ -193,14 +193,14 @@ install_mongo_express() {
             if ! mongosh --quiet --eval "
                 use admin;
                 try {
-                    db.changeUserPassword('$mongo_user', '$NEW_PASS');
-                    print('Password updated successfully');
+                    db.updateUser('$mongo_user', { pwd: '$NEW_PASS', roles: [ { role: 'root', db: 'admin' } ] });
+                    print('Password and roles updated successfully');
                 } catch(e) {
                     if (e.code === 11000 || e.codeName === 'UserNotFound') {
                         db.createUser({
                             user: '$mongo_user',
                             pwd: '$NEW_PASS',
-                            roles: [ { role: 'userAdminAnyDatabase', db: 'admin' }, { role: 'readWriteAnyDatabase', db: 'admin' } ]
+                            roles: [ { role: 'root', db: 'admin' } ]
                         });
                         print('User created successfully');
                     } else {
@@ -219,18 +219,32 @@ install_mongo_express() {
             print_info "Re-enabling authentication..."
             sed -i 's/authorization: disabled/authorization: enabled/' /etc/mongod.conf
             systemctl restart mongod
-            sleep 5
+            
+            print_info "Waiting for MongoDB to restart..."
+            sleep 10
             
             print_success "Password reset successfully!"
             print_info "New Password for '$mongo_user': $NEW_PASS"
             mongo_pass="$NEW_PASS"
             
-            # Retry verification
-            if ! mongosh --quiet --username "$mongo_user" --password "$mongo_pass" --authenticationDatabase admin --host localhost --port 27017 --eval "db.adminCommand('listDatabases')" &>/dev/null; then
+            # Retry verification with loop
+            print_step "Verifying new credentials..."
+            MAX_RETRIES=3
+            COUNT=0
+            while [ $COUNT -lt $MAX_RETRIES ]; do
+                if mongosh --quiet --username "$mongo_user" --password "$mongo_pass" --authenticationDatabase admin --host localhost --port 27017 --eval "db.adminCommand('listDatabases')" &>/dev/null; then
+                    print_success "✅ MongoDB connection verified with new password!"
+                    break
+                fi
+                COUNT=$((COUNT+1))
+                print_warning "Verification attempt $COUNT failed. Retrying in 3s..."
+                sleep 3
+            done
+            
+            if [ $COUNT -eq $MAX_RETRIES ]; then
                  print_error "Still failed to verify after reset. Please check logs."
                  return
             fi
-            print_success "✅ MongoDB connection verified with new password!"
         else
             print_info "Troubleshooting:"
             print_info "  1. Check if username '$mongo_user' is correct."
