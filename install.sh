@@ -363,13 +363,37 @@ install_mongo_express() {
     export NVM_DIR="$HOME/.nvm"
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
     
-    # Install
-    npm install -g mongo-express
+    # Create directory for mongo-express local install
+    # Global install can be flaky with paths
+    MONGO_EXPRESS_DIR="$NDC_INSTALL_DIR/mongo-express"
+    mkdir -p "$MONGO_EXPRESS_DIR"
     
-    MONGO_EXPRESS_HOME="$(npm root -g)/mongo-express"
+    print_info "Installing Mongo Express locally in $MONGO_EXPRESS_DIR..."
+    cd "$MONGO_EXPRESS_DIR"
     
-    if [ ! -d "$MONGO_EXPRESS_HOME" ]; then
-        print_error "Mongo Express install failed"
+    # Initialize dummy package.json to avoid warnings
+    if [ ! -f package.json ]; then
+        npm init -y >/dev/null 2>&1
+    fi
+    
+    # Install mongo-express locally (latest version)
+    print_info "Installing Mongo Express packages..."
+    npm install mongo-express@latest
+    
+    # FIX: Build assets manually because npm package might miss them in RC versions
+    if [ -d "$MONGO_EXPRESS_DIR/node_modules/mongo-express" ]; then
+        print_info "Building Mongo Express assets..."
+        cd "$MONGO_EXPRESS_DIR/node_modules/mongo-express"
+        npm install --silent >/dev/null 2>&1
+        npm run build >/dev/null 2>&1
+        cd "$MONGO_EXPRESS_DIR"
+    fi
+    
+    # Path to app.js in local install
+    MONGO_EXPRESS_SCRIPT="$MONGO_EXPRESS_DIR/node_modules/mongo-express/app.js"
+    
+    if [ ! -f "$MONGO_EXPRESS_SCRIPT" ]; then
+        print_error "Mongo Express install failed (script not found at $MONGO_EXPRESS_SCRIPT)"
         return
     fi
     
@@ -378,8 +402,8 @@ install_mongo_express() {
 module.exports = {
   apps: [{
     name: 'mongo-express',
-    script: 'app.js',
-    cwd: '$MONGO_EXPRESS_HOME',
+    script: '$MONGO_EXPRESS_SCRIPT',
+    cwd: '$MONGO_EXPRESS_DIR/node_modules/mongo-express',
     instances: 1,
     autorestart: true,
     watch: false,
@@ -404,6 +428,9 @@ module.exports = {
 };
 EOF
 
+    # Stop existing if any
+    pm2 delete mongo-express >/dev/null 2>&1 || true
+
     # Start
     pm2 start "$NDC_CONFIG_DIR/mongo-express.config.js"
     pm2 save
@@ -419,11 +446,30 @@ EOF
     fi
     
     # Open firewall port 8081
+    print_info "Configuring firewall for Mongo Express..."
     if command -v ufw >/dev/null; then
         ufw allow 8081/tcp >/dev/null 2>&1
+        ufw reload >/dev/null 2>&1
     elif command -v firewall-cmd >/dev/null; then
         firewall-cmd --permanent --add-port=8081/tcp >/dev/null 2>&1
         firewall-cmd --reload >/dev/null 2>&1
+    else
+        print_warning "No firewall manager found (ufw/firewalld). Please open port 8081 manually."
+    fi
+    
+    # Verify if port is listening
+    print_info "Verifying Mongo Express connection..."
+    sleep 5
+    
+    if command -v netstat >/dev/null; then
+        if netstat -tulnp | grep -q "0.0.0.0:8081"; then
+            print_success "Mongo Express is listening on 0.0.0.0:8081 (Correct)."
+        elif netstat -tulnp | grep -q "127.0.0.1:8081"; then
+            print_warning "Mongo Express is listening on localhost (127.0.0.1:8081) only."
+            print_warning "It will NOT be accessible from outside."
+        else
+            print_warning "Port 8081 is not detected in netstat."
+        fi
     fi
     
     print_success "Mongo Express installed (Port 8081)"
