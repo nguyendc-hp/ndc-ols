@@ -53,16 +53,24 @@ show_db_credentials() {
         echo -e "  User: ${YELLOW}$MONGO_EXPRESS_USER${NC}"
         echo -e "  Pass: ${YELLOW}$MONGO_EXPRESS_PASS${NC}"
         echo ""
+        
+        if [ -n "$MYSQL_ROOT_PASS" ]; then
+            echo -e "${CYAN}phpMyAdmin GUI:${NC}"
+            echo -e "  URL : ${YELLOW}http://$(get_public_ip):8080${NC}"
+            echo -e "  User: ${YELLOW}root${NC}"
+            echo -e "  Pass: ${YELLOW}$MYSQL_ROOT_PASS${NC}"
+            echo ""
+        fi
     else
         print_warning "No credentials file found at $NDC_CONFIG_DIR/auth.conf"
     fi
     
-    # Check for phpMyAdmin
-    if [ -d "/usr/share/phpmyadmin" ] || [ -f "/etc/nginx/conf.d/phpmyadmin.conf" ]; then
+    # Check for phpMyAdmin if not in auth.conf
+    if [ -z "$MYSQL_ROOT_PASS" ] && ([ -d "/usr/share/phpmyadmin" ] || [ -f "/etc/nginx/conf.d/phpmyadmin.conf" ]); then
         echo -e "${CYAN}phpMyAdmin GUI:${NC}"
         echo -e "  URL : ${YELLOW}http://$(get_public_ip):8080${NC}"
         echo -e "  User: ${YELLOW}root${NC}"
-        echo -e "  Pass: ${YELLOW}$MYSQL_ROOT_PASS${NC}"
+        echo -e "  Pass: ${RED}(Unknown - Check /root/.my.cnf or reset)${NC}"
         echo ""
     fi
     

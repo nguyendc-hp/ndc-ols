@@ -363,6 +363,16 @@ EOF
     pm2 start "$NDC_CONFIG_DIR/mongo-express.config.js" >/dev/null 2>&1
     pm2 save >/dev/null 2>&1
     
+    # Wait and check if it's running
+    sleep 5
+    if ! pm2 list | grep -q "mongo-express.*online"; then
+        print_error "Mongo Express failed to start. Checking logs..."
+        pm2 logs mongo-express --lines 20 --nostream
+        print_warning "Attempting to restart..."
+        pm2 restart mongo-express
+        sleep 5
+    fi
+    
     # Open firewall port 8081
     if command -v ufw >/dev/null; then
         ufw allow 8081/tcp >/dev/null 2>&1
@@ -416,38 +426,65 @@ install_mysql() {
     
     MYSQL_ROOT_PASS=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9')
     
-    # Try to set root password. 
-    # On fresh install, root has no password (unix_socket).
-    # If this fails, it might be because a password is already set.
+    # Function to set password
+    set_mysql_pass() {
+        mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASS'; FLUSH PRIVILEGES;" 2>/dev/null
+    }
     
-    if mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASS';" 2>/dev/null; then
+    # Try standard method first
+    if set_mysql_pass; then
         print_success "Root password set successfully."
-        
-        # Perform other security measures
-        mysql -u root -p"$MYSQL_ROOT_PASS" -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null || true
-        mysql -u root -p"$MYSQL_ROOT_PASS" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null || true
-        mysql -u root -p"$MYSQL_ROOT_PASS" -e "DROP DATABASE IF EXISTS test;" 2>/dev/null || true
-        mysql -u root -p"$MYSQL_ROOT_PASS" -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" 2>/dev/null || true
-        mysql -u root -p"$MYSQL_ROOT_PASS" -e "FLUSH PRIVILEGES;" 2>/dev/null || true
-        
-        # Save credentials
-        if [ ! -f "$NDC_CONFIG_DIR/auth.conf" ]; then
-            mkdir -p "$NDC_CONFIG_DIR"
-            touch "$NDC_CONFIG_DIR/auth.conf"
-            chmod 600 "$NDC_CONFIG_DIR/auth.conf"
-        fi
-        
-        # Remove old entry if exists
-        sed -i '/MYSQL_ROOT_PASS=/d' "$NDC_CONFIG_DIR/auth.conf"
-        echo "MYSQL_ROOT_PASS=$MYSQL_ROOT_PASS" >> "$NDC_CONFIG_DIR/auth.conf"
-        
-        print_success "MariaDB secured"
-        
     else
-        print_warning "Could not set MariaDB root password (maybe already set?)."
-        print_info "Skipping security configuration to avoid errors."
-        # We don't exit here, just continue.
+        print_warning "Standard password set failed. Trying recovery mode..."
+        
+        # Stop service
+        systemctl stop mariadb
+        
+        # Start with skip-grant-tables
+        mkdir -p /var/run/mysqld
+        chown mysql:mysql /var/run/mysqld
+        mysqld_safe --skip-grant-tables --skip-networking &
+        PID=$!
+        sleep 10
+        
+        # Reset password
+        mysql -e "FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASS'; FLUSH PRIVILEGES;"
+        
+        # Stop recovery mode
+        kill $PID
+        wait $PID 2>/dev/null
+        sleep 5
+        
+        # Restart service
+        systemctl start mariadb
+        
+        # Verify
+        if mysql -u root -p"$MYSQL_ROOT_PASS" -e "SELECT 1" >/dev/null 2>&1; then
+            print_success "Root password reset successfully via recovery mode."
+        else
+            print_error "Failed to set MariaDB root password."
+        fi
     fi
+
+    # Perform other security measures (using the new password)
+    mysql -u root -p"$MYSQL_ROOT_PASS" -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null || true
+    mysql -u root -p"$MYSQL_ROOT_PASS" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null || true
+    mysql -u root -p"$MYSQL_ROOT_PASS" -e "DROP DATABASE IF EXISTS test;" 2>/dev/null || true
+    mysql -u root -p"$MYSQL_ROOT_PASS" -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" 2>/dev/null || true
+    mysql -u root -p"$MYSQL_ROOT_PASS" -e "FLUSH PRIVILEGES;" 2>/dev/null || true
+    
+    # Save credentials
+    if [ ! -f "$NDC_CONFIG_DIR/auth.conf" ]; then
+        mkdir -p "$NDC_CONFIG_DIR"
+        touch "$NDC_CONFIG_DIR/auth.conf"
+        chmod 600 "$NDC_CONFIG_DIR/auth.conf"
+    fi
+    
+    # Remove old entry if exists and append new
+    sed -i '/MYSQL_ROOT_PASS=/d' "$NDC_CONFIG_DIR/auth.conf"
+    echo "MYSQL_ROOT_PASS=$MYSQL_ROOT_PASS" >> "$NDC_CONFIG_DIR/auth.conf"
+    
+    print_success "MariaDB secured"
 }
 
 #######################################
