@@ -4,11 +4,30 @@
 # Auto install all dependencies
 #######################################
 
-set -e
+set -euo pipefail
 
 # Prevent interactive prompts
 export DEBIAN_FRONTEND=noninteractive
 export NEEDRESTART_MODE=a
+
+# Global error handler
+trap 'error_handler $? $LINENO' ERR
+error_handler() {
+    local exit_code=$1
+    local line_number=$2
+    print_error "Installation failed at line $line_number with exit code $exit_code"
+    cleanup_on_error
+    exit $exit_code
+}
+
+# Cleanup function for error cases
+cleanup_on_error() {
+    print_warning "Attempting cleanup..."
+    # Kill any background processes
+    jobs -p | xargs -r kill 2>/dev/null || true
+    # Make sure we're in a safe directory
+    cd /tmp 2>/dev/null || cd / || true
+}
 
 # Colors
 RED='\033[0;31m'
@@ -104,64 +123,63 @@ print_step() { echo -e "${BLUE}[→]${NC} ${BOLD}$1${NC}"; }
 # Wait for APT/DPKG Lock
 #######################################
 wait_for_apt() {
-    if [ "$PKG_MANAGER" = "apt-get" ]; then
-        local i=0
-        local stale_lock_count=0
+    if [ "$PKG_MANAGER" != "apt-get" ]; then
+        return 0
+    fi
+    
+    local i=0
+    local stale_lock_count=0
+    local max_wait=300  # 5 minutes
+    
+    while true; do
+        local running_proc=""
         
-        while true; do
-            local running_proc=""
-            # Check common package manager processes
-            if pgrep -x "apt" >/dev/null; then running_proc="apt"; fi
-            if pgrep -x "apt-get" >/dev/null; then running_proc="apt-get"; fi
-            if pgrep -x "dpkg" >/dev/null; then running_proc="dpkg"; fi
-            if pgrep -f "unattended-upgr" >/dev/null; then running_proc="unattended-upgrades"; fi
-            
-            local lock_exists=0
-            if [ -f /var/lib/dpkg/lock-frontend ] || [ -f /var/lib/dpkg/lock ] || [ -f /var/lib/apt/lists/lock ]; then
-                lock_exists=1
+        # Check common package manager processes
+        if pgrep -x "apt" >/dev/null 2>&1; then running_proc="apt"; fi
+        if pgrep -x "apt-get" >/dev/null 2>&1; then running_proc="apt-get"; fi
+        if pgrep -x "dpkg" >/dev/null 2>&1; then running_proc="dpkg"; fi
+        if pgrep -f "unattended-upgr" >/dev/null 2>&1; then running_proc="unattended-upgrades"; fi
+        
+        local lock_exists=0
+        [ -f /var/lib/dpkg/lock-frontend ] && lock_exists=1
+        [ -f /var/lib/dpkg/lock ] && lock_exists=1
+        [ -f /var/lib/apt/lists/lock ] && lock_exists=1
+        
+        # If no process and no lock, we are good
+        if [ -z "$running_proc" ] && [ $lock_exists -eq 0 ]; then
+            break
+        fi
+        
+        if [ $i -eq 0 ]; then
+            print_info "Waiting for package manager to be available..."
+        fi
+        
+        if [ -n "$running_proc" ]; then
+            if [ $((i % 15)) -eq 0 ]; then
+                print_info "Process '$running_proc' is running. Waiting... (${i}s)"
             fi
-            
-            # If no process and no lock, we are good
-            if [ -z "$running_proc" ] && [ $lock_exists -eq 0 ]; then
+            stale_lock_count=0
+        else
+            # Lock exists but no process found
+            stale_lock_count=$((stale_lock_count+1))
+            if [ $stale_lock_count -gt 10 ]; then
+                print_warning "Stale lock detected. Cleaning up..."
+                rm -f /var/lib/dpkg/lock-frontend 2>/dev/null || true
+                rm -f /var/lib/dpkg/lock 2>/dev/null || true
+                rm -f /var/lib/apt/lists/lock 2>/dev/null || true
+                dpkg --configure -a >/dev/null 2>&1 || true
                 break
             fi
-            
-            if [ $i -eq 0 ]; then
-                print_info "Checking for other package manager processes..."
-            fi
-            
-            if [ -n "$running_proc" ]; then
-                if [ $((i % 10)) -eq 0 ]; then
-                    print_info "Process '$running_proc' is running (System Update). Waiting..."
-                    if [ "$running_proc" = "unattended-upgrades" ] && [ $i -gt 15 ]; then
-                         echo -e "${YELLOW}   (Hint: This is an automatic OS update. To force stop: Open new terminal -> 'sudo systemctl stop unattended-upgrades')${NC}"
-                    fi
-                fi
-                stale_lock_count=0
-            else
-                # Lock exists but no process found
-                stale_lock_count=$((stale_lock_count+1))
-                if [ $stale_lock_count -gt 5 ]; then # 10 seconds
-                    print_warning "Stale lock detected (no process running). Removing locks..."
-                    rm -f /var/lib/dpkg/lock-frontend
-                    rm -f /var/lib/dpkg/lock
-                    rm -f /var/lib/apt/lists/lock
-                    # Fix interrupted installs if any
-                    dpkg --configure -a >/dev/null 2>&1 || true
-                    print_success "Locks removed."
-                    break
-                fi
-            fi
-            
-            sleep 2
-            i=$((i+1))
-            
-            if [ $i -gt 300 ]; then # 10 minutes max
-                 print_warning "Timed out waiting. Proceeding..."
-                 break
-            fi
-        done
-    fi
+        fi
+        
+        sleep 2
+        i=$((i+2))
+        
+        if [ $i -gt $max_wait ]; then
+            print_warning "Timeout waiting for package manager (${max_wait}s). Proceeding anyway..."
+            break
+        fi
+    done
 }
 
 #######################################
@@ -602,30 +620,37 @@ install_mysql() {
         esac
     fi
     
-    systemctl enable mariadb
+    systemctl enable mariadb 2>/dev/null || true
     
-    # Try to start, if fail, try to fix
-    if ! systemctl start mariadb; then
-        print_warning "MariaDB failed to start. Attempting to repair..."
+    # Try to start, with error recovery
+    if ! systemctl start mariadb 2>/dev/null; then
+        print_warning "MariaDB failed to start. Attempting recovery..."
         
+        # Aggressive cleanup
         systemctl stop mariadb 2>/dev/null || true
+        sleep 1
         pkill -9 -f mariadbd 2>/dev/null || true
         pkill -9 -f mysqld 2>/dev/null || true
+        pkill -9 -f mysqld_safe 2>/dev/null || true
         
-        # Check for lock file
-        rm -f /var/run/mysqld/mysqld.sock
-        rm -f /var/lib/mysql/mysql.sock
+        # Remove socket and lock files
+        rm -f /var/run/mysqld/mysqld.sock 2>/dev/null || true
+        rm -f /var/lib/mysql/mysql.sock 2>/dev/null || true
+        rm -f /var/run/mysqld/*.sock 2>/dev/null || true
+        mkdir -p /var/run/mysqld
+        chown mysql:mysql /var/run/mysqld 2>/dev/null || true
         
         # Try start again
-        if ! systemctl start mariadb; then
-             print_error "MariaDB failed to start even after repair attempt."
-             print_info "Please check logs: journalctl -xeu mariadb.service"
-             return
+        sleep 2
+        if ! systemctl start mariadb 2>/dev/null; then
+             print_error "MariaDB recovery failed. Skipping MariaDB security setup."
+             print_info "Manual fix: systemctl status mariadb, journalctl -xeu mariadb"
+             return 0
         fi
     fi
     
     # Wait for MariaDB to be ready
-    print_info "Waiting for MariaDB to start..."
+    print_info "Waiting for MariaDB to be ready..."
     local max_retries=30
     local count=0
     while [ $count -lt $max_retries ]; do
@@ -635,136 +660,101 @@ install_mysql() {
         sleep 1
         count=$((count+1))
     done
+    
+    if [ $count -ge $max_retries ]; then
+        print_warning "MariaDB is not responding after ${max_retries}s. Skipping password security setup."
+        return 0
+    fi
 
     # Check if we have credentials and they work
     if [ -f "$NDC_CONFIG_DIR/auth.conf" ]; then
         source "$NDC_CONFIG_DIR/auth.conf"
-        if [ -n "$MYSQL_ROOT_PASS" ]; then
+        if [ -n "${MYSQL_ROOT_PASS:-}" ]; then
             if mysql -u root -p"$MYSQL_ROOT_PASS" -e "SELECT 1" >/dev/null 2>&1; then
-                print_success "MariaDB is already secured and running. Skipping setup."
-                return
+                print_success "MariaDB is already secured and running."
+                return 0
             fi
         fi
     fi
     
-    # Secure MariaDB
     print_step "Securing MariaDB..."
     
     MYSQL_ROOT_PASS=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9')
     
-    # Function to set password
-    set_mysql_pass() {
-        mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASS'; FLUSH PRIVILEGES;" 2>/dev/null
-    }
-    
     # Try standard method first
-    if set_mysql_pass; then
+    if mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASS'; FLUSH PRIVILEGES;" >/dev/null 2>&1; then
         print_success "Root password set successfully."
     else
-        print_warning "Standard password set failed. Trying recovery mode..."
+        print_warning "Standard password method failed. Trying recovery mode..."
         
-        # Stop service
-        print_info "Stopping MariaDB service..."
-        systemctl stop mariadb
-        
-        # Ensure it's stopped
-        if command -v pkill >/dev/null; then
-            pkill -f mariadbd 2>/dev/null || true
-            pkill -f mysqld 2>/dev/null || true
-        fi
+        # Backup database
+        systemctl stop mariadb 2>/dev/null || true
+        pkill -9 -f mariadbd 2>/dev/null || true
+        pkill -9 -f mysqld 2>/dev/null || true
+        pkill -9 -f mysqld_safe 2>/dev/null || true
         sleep 2
         
-        # Start with skip-grant-tables
+        # Clean socket
+        rm -f /var/run/mysqld/mysqld.sock
         mkdir -p /var/run/mysqld
         chown mysql:mysql /var/run/mysqld
         
-        print_info "Starting MariaDB in safe mode..."
-        # Redirect output to prevent hanging on pipe and run in background
-        mysqld_safe --skip-grant-tables --skip-networking >/dev/null 2>&1 &
-        PID=$!
+        print_info "Starting MariaDB in recovery mode..."
+        # Use nohup to prevent HUP signal issues
+        nohup mysqld_safe --skip-grant-tables --skip-networking >/dev/null 2>&1 &
+        RECOVER_PID=$!
         
-        # Wait for socket to be ready
-        print_info "Waiting for database socket..."
-        local socket_ready=0
-        for i in {1..30}; do
-            if [ -S /var/run/mysqld/mysqld.sock ]; then
-                socket_ready=1
-                break
-            fi
+        # Wait for socket
+        sleep 5
+        local socket_retries=0
+        while [ ! -S /var/run/mysqld/mysqld.sock ] && [ $socket_retries -lt 15 ]; do
             sleep 1
+            socket_retries=$((socket_retries+1))
         done
         
-        if [ $socket_ready -eq 0 ]; then
-            print_warning "Socket not found, waiting extra time..."
-            sleep 5
-        fi
-        
-        # Reset password
-        print_info "Resetting password..."
-        # Try multiple methods to reset password
+        # Try password reset
         if mysql -u root --protocol=socket -e "FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASS'; FLUSH PRIVILEGES;" 2>/dev/null; then
-             print_success "Password reset method 1 success."
-        elif mysql -u root --protocol=socket -e "FLUSH PRIVILEGES; SET PASSWORD FOR 'root'@'localhost' = PASSWORD('$MYSQL_ROOT_PASS'); FLUSH PRIVILEGES;" 2>/dev/null; then
-             print_success "Password reset method 2 success."
-        elif mysql -u root --protocol=socket -D mysql -e "FLUSH PRIVILEGES; UPDATE user SET authentication_string=PASSWORD('$MYSQL_ROOT_PASS') WHERE User='root'; FLUSH PRIVILEGES;" 2>/dev/null; then
-             print_success "Password reset method 3 success."
+            print_success "Password reset via recovery mode succeeded."
         else
-             print_error "All password reset methods failed."
+            print_warning "Could not reset password. Using default access."
         fi
         
-        # Stop recovery mode
-        print_info "Stopping safe mode..."
-        # Kill the specific process we started
-        kill $PID 2>/dev/null
-        
-        # Give it a moment to die gracefully
+        # Clean shutdown
+        pkill -f mysqld_safe 2>/dev/null || true
+        pkill -9 -f mariadbd 2>/dev/null || true
         sleep 3
         
-        # Aggressively kill any remaining mysql processes to ensure clean slate
-        if command -v pkill >/dev/null; then
-            pkill -f mysqld_safe 2>/dev/null || true
-            pkill -f mariadbd 2>/dev/null || true
-            pkill -f mysqld 2>/dev/null || true
-        fi
-        
-        # Force kill if they are stubborn
-        if pgrep -f "mariadbd" >/dev/null || pgrep -f "mysqld" >/dev/null; then
-             pkill -9 -f mysqld_safe 2>/dev/null || true
-             pkill -9 -f mariadbd 2>/dev/null || true
-             pkill -9 -f mysqld 2>/dev/null || true
-        fi
-        
-        # Clean up lock file
-        rm -f /var/run/mysqld/mysqld.sock
-        
-        # Restart service
-        print_info "Restarting MariaDB service..."
-        systemctl start mariadb
-        
-        # Verify
-        if mysql -u root -p"$MYSQL_ROOT_PASS" -e "SELECT 1" >/dev/null 2>&1; then
-            print_success "Root password reset successfully via recovery mode."
-        else
-            print_error "Failed to set MariaDB root password."
-        fi
+        # Normal restart
+        systemctl start mariadb 2>/dev/null || true
+        sleep 3
     fi
 
-    # Perform other security measures (using the new password)
-    mysql -u root -p"$MYSQL_ROOT_PASS" -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null || true
-    mysql -u root -p"$MYSQL_ROOT_PASS" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null || true
-    mysql -u root -p"$MYSQL_ROOT_PASS" -e "DROP DATABASE IF EXISTS test;" 2>/dev/null || true
-    mysql -u root -p"$MYSQL_ROOT_PASS" -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" 2>/dev/null || true
-    mysql -u root -p"$MYSQL_ROOT_PASS" -e "FLUSH PRIVILEGES;" 2>/dev/null || true
+    # Security best practices (if connection works)
+    if mysql -u root -p"$MYSQL_ROOT_PASS" -e "SELECT 1" >/dev/null 2>&1; then
+        mysql -u root -p"$MYSQL_ROOT_PASS" -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null || true
+        mysql -u root -p"$MYSQL_ROOT_PASS" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null || true
+        mysql -u root -p"$MYSQL_ROOT_PASS" -e "DROP DATABASE IF EXISTS test;" 2>/dev/null || true
+        mysql -u root -p"$MYSQL_ROOT_PASS" -e "FLUSH PRIVILEGES;" 2>/dev/null || true
+    fi
     
     # Save credentials
+    if [ ! -d "$NDC_CONFIG_DIR" ]; then
+        mkdir -p "$NDC_CONFIG_DIR" || {
+            print_error "Failed to create config directory"
+            return 1
+        }
+    fi
+    
     if [ ! -f "$NDC_CONFIG_DIR/auth.conf" ]; then
-        mkdir -p "$NDC_CONFIG_DIR"
-        touch "$NDC_CONFIG_DIR/auth.conf"
+        touch "$NDC_CONFIG_DIR/auth.conf" || {
+            print_error "Failed to create auth config file"
+            return 1
+        }
         chmod 600 "$NDC_CONFIG_DIR/auth.conf"
     fi
     
     # Remove old entry if exists and append new
-    sed -i '/MYSQL_ROOT_PASS=/d' "$NDC_CONFIG_DIR/auth.conf"
+    sed -i '/MYSQL_ROOT_PASS=/d' "$NDC_CONFIG_DIR/auth.conf" 2>/dev/null || true
     echo "MYSQL_ROOT_PASS=$MYSQL_ROOT_PASS" >> "$NDC_CONFIG_DIR/auth.conf"
     
     print_success "MariaDB secured"
@@ -1172,27 +1162,40 @@ clone_ndc_ols() {
         # Local installation
         cp -r "$(dirname "$0")"/* "$NDC_INSTALL_DIR/"
     else
-        # Remote installation
-        # Ensure we are not inside the directory we are about to delete
-        # (Previous steps like install_pgadmin might have cd'ed into it)
-        cd "$HOME" || cd /tmp
+        # Remote installation - ensure we exit the directory first
+        cd /tmp 2>/dev/null || cd / || true
         
-        # Remove existing directory if it exists to avoid clone errors
-        rm -rf "$NDC_INSTALL_DIR"
-        mkdir -p "$NDC_INSTALL_DIR"
+        # Remove existing directory if it exists
+        if [ -d "$NDC_INSTALL_DIR" ]; then
+            print_warning "Removing existing NDC OLS installation..."
+            rm -rf "$NDC_INSTALL_DIR" || {
+                print_error "Failed to remove old installation directory"
+                return 1
+            }
+        fi
         
-        git clone "$GITHUB_REPO" "$NDC_INSTALL_DIR" || {
-            print_error "Failed to clone repository from $GITHUB_REPO"
-            exit 1
+        mkdir -p "$NDC_INSTALL_DIR" || {
+            print_error "Failed to create NDC OLS directory"
+            return 1
         }
+        
+        print_info "Cloning NDC OLS from GitHub..."
+        if ! git clone "$GITHUB_REPO" "$NDC_INSTALL_DIR"; then
+            print_error "Failed to clone repository from $GITHUB_REPO"
+            return 1
+        fi
     fi
     
     # Set permissions
-    chmod +x "$NDC_INSTALL_DIR/ndc-ols.sh"
-    chmod +x "$NDC_INSTALL_DIR/modules/"*.sh
-    chmod +x "$NDC_INSTALL_DIR/utils/"*.sh
+    chmod +x "$NDC_INSTALL_DIR/ndc-ols.sh" 2>/dev/null || true
+    if [ -d "$NDC_INSTALL_DIR/modules" ]; then
+        chmod +x "$NDC_INSTALL_DIR/modules"/*.sh 2>/dev/null || true
+    fi
+    if [ -d "$NDC_INSTALL_DIR/utils" ]; then
+        chmod +x "$NDC_INSTALL_DIR/utils"/*.sh 2>/dev/null || true
+    fi
     
-    print_success "NDC OLS files installed"
+    print_success "NDC OLS files installed successfully"
 }
 
 #######################################
