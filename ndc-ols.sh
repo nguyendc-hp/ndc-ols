@@ -23,10 +23,35 @@ source "$NDC_INSTALL_DIR/utils/validators.sh"
 #######################################
 # Show banner
 #######################################
+print_cool_face() {
+    echo -e "${CYAN}"
+    echo "        .           . "
+    echo "      /' \         / \`"
+    echo "     /   | .---.  |   \\"
+    echo "    |    |/  _  \|    |"
+    echo "    |    |\`  _  /|    |"
+    echo "     \   | '---'  |   /"
+    echo "      \./         \./  "
+    echo "         |       |     "
+    echo "         |       |     "
+    echo "         |       |     "
+    echo "     /   |       |   \\ "
+    echo "    |    |       |    |"
+    echo "    |    |       |    |"
+    echo "     \   |       |   / "
+    echo "      \./         \./  "
+    echo -e "${NC}"
+    echo -e "${YELLOW}   ( •_•)${NC}"
+    echo -e "${YELLOW}   ( •_•)>⌐■-■${NC}"
+    echo -e "${YELLOW}   (⌐■_■)${NC}  ${GREEN}System Ready...${NC}"
+    echo ""
+}
+
 show_banner() {
     if [ "$1" != "no-clear" ]; then
         clear
     fi
+    print_cool_face
     printf "%b" "${CYAN}"
     printf "%b" "+-----------------------------------------------------------------------+\n"
     printf "%b" "|                                                                       |\n"

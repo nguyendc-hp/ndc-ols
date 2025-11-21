@@ -31,8 +31,55 @@ GITHUB_RAW="https://raw.githubusercontent.com/nguyendc-hp/ndc-ols/main"
 #######################################
 # Print functions
 #######################################
+print_cool_face() {
+    echo -e "${CYAN}"
+    echo "        .           . "
+    echo "      /' \         / \`"
+    echo "     /   | .---.  |   \\"
+    echo "    |    |/  _  \|    |"
+    echo "    |    |\`  _  /|    |"
+    echo "     \   | '---'  |   /"
+    echo "      \./         \./  "
+    echo "         |       |     "
+    echo "         |       |     "
+    echo "         |       |     "
+    echo "     /   |       |   \\ "
+    echo "    |    |       |    |"
+    echo "    |    |       |    |"
+    echo "     \   |       |   / "
+    echo "      \./         \./  "
+    echo -e "${NC}"
+    echo -e "${YELLOW}   ( •_•)${NC}"
+    echo -e "${YELLOW}   ( •_•)>⌐■-■${NC}"
+    echo -e "${YELLOW}   (⌐■_■)${NC}  ${GREEN}System Ready...${NC}"
+    echo ""
+}
+
+matrix_effect() {
+    echo -e "${GREEN}Initializing Matrix Protocol...${NC}"
+    sleep 1
+    local lines=20
+    for (( i=1; i<=lines; i++ )); do
+        local line=""
+        for (( j=1; j<=80; j++ )); do
+            local char=$(printf "\\$(printf '%03o' $((RANDOM%26+97)))")
+            local color=$((RANDOM%2))
+            if [ $color -eq 0 ]; then
+                line="${line}${GREEN}${char}${NC}"
+            else
+                line="${line}${BOLD}${GREEN}${char}${NC}"
+            fi
+        done
+        echo -e "$line"
+        sleep 0.05
+    done
+    clear
+}
+
 print_banner() {
     clear
+    matrix_effect
+    print_cool_face
     echo -e "${BLUE}"
     echo "    _   _ ____   ____   ___  _     ____  "
     echo "   | \ | |  _ \ / ___| / _ \| |   / ___| "
@@ -115,11 +162,11 @@ update_system() {
     
     case "$PKG_MANAGER" in
         apt-get)
-            apt-get update -qq
-            apt-get upgrade -y -qq
+            apt-get update
+            apt-get upgrade -y
             ;;
         dnf)
-            dnf update -y -q
+            dnf update -y
             ;;
     esac
     
@@ -134,16 +181,14 @@ install_dependencies() {
     
     case "$PKG_MANAGER" in
         apt-get)
-            apt-get install -y -qq curl wget git tar gzip unzip software-properties-common \
+            apt-get install -y curl wget git tar gzip unzip software-properties-common \
                 build-essential libssl-dev ca-certificates gnupg lsb-release \
-                netcat net-tools htop iotop screen vim nano ufw fail2ban \
-                >/dev/null 2>&1
+                netcat net-tools htop iotop screen vim nano ufw fail2ban
             ;;
         dnf)
-            dnf install -y -q curl wget git tar gzip unzip \
+            dnf install -y curl wget git tar gzip unzip \
                 gcc gcc-c++ make openssl-devel ca-certificates \
-                nc net-tools htop iotop screen vim nano firewalld fail2ban \
-                >/dev/null 2>&1
+                nc net-tools htop iotop screen vim nano firewalld fail2ban
             ;;
     esac
     
@@ -163,10 +208,10 @@ install_nginx() {
     
     case "$PKG_MANAGER" in
         apt-get)
-            apt-get install -y -qq nginx >/dev/null 2>&1
+            apt-get install -y nginx
             ;;
         dnf)
-            dnf install -y -q nginx >/dev/null 2>&1
+            dnf install -y nginx
             ;;
     esac
     
@@ -184,7 +229,7 @@ install_node() {
     
     # Install NVM
     if [ ! -d "$HOME/.nvm" ]; then
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash >/dev/null 2>&1
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
         
         export NVM_DIR="$HOME/.nvm"
         [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
@@ -198,9 +243,9 @@ install_node() {
     export NVM_DIR="$HOME/.nvm"
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
     
-    nvm install --lts >/dev/null 2>&1
-    nvm use --lts >/dev/null 2>&1
-    nvm alias default 'lts/*' >/dev/null 2>&1
+    nvm install --lts
+    nvm use --lts
+    nvm alias default 'lts/*'
     
     NODE_VERSION=$(node -v)
     print_success "Node.js $NODE_VERSION installed"
@@ -215,9 +260,9 @@ install_pm2() {
     export NVM_DIR="$HOME/.nvm"
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
     
-    npm install -g pm2 >/dev/null 2>&1
-    pm2 startup systemd -u root --hp /root >/dev/null 2>&1
-    pm2 save >/dev/null 2>&1
+    npm install -g pm2
+    pm2 startup systemd -u root --hp /root
+    pm2 save
     
     print_success "PM2 installed"
 }
@@ -237,8 +282,8 @@ install_mongodb() {
         apt-get)
             curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg
             echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
-            apt-get update -qq
-            apt-get install -y -qq mongodb-org mongodb-mongosh >/dev/null 2>&1
+            apt-get update
+            apt-get install -y mongodb-org mongodb-mongosh
             ;;
         dnf)
             cat > /etc/yum.repos.d/mongodb-org-7.0.repo <<EOF
@@ -249,7 +294,7 @@ gpgcheck=1
 enabled=1
 gpgkey=https://www.mongodb.org/static/pgp/server-7.0.asc
 EOF
-            dnf install -y -q mongodb-org mongodb-mongosh >/dev/null 2>&1
+            dnf install -y mongodb-org mongodb-mongosh
             ;;
     esac
     
@@ -275,7 +320,7 @@ EOF
         pwd: '$MONGO_ADMIN_PASS',
         roles: [ { role: 'root', db: 'admin' } ]
       });
-    " >/dev/null 2>&1
+    "
     
     # Enable auth
     sed -i 's/^#security:/security:/' /etc/mongod.conf 2>/dev/null || echo "security:" >> /etc/mongod.conf
@@ -319,7 +364,7 @@ install_mongo_express() {
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
     
     # Install
-    npm install -g mongo-express >/dev/null 2>&1
+    npm install -g mongo-express
     
     MONGO_EXPRESS_HOME="$(npm root -g)/mongo-express"
     
@@ -360,8 +405,8 @@ module.exports = {
 EOF
 
     # Start
-    pm2 start "$NDC_CONFIG_DIR/mongo-express.config.js" >/dev/null 2>&1
-    pm2 save >/dev/null 2>&1
+    pm2 start "$NDC_CONFIG_DIR/mongo-express.config.js"
+    pm2 save
     
     # Wait and check if it's running
     sleep 5
@@ -398,10 +443,10 @@ install_mysql() {
     else
         case "$PKG_MANAGER" in
             apt-get)
-                apt-get install -y -qq mariadb-server mariadb-client >/dev/null 2>&1
+                apt-get install -y mariadb-server mariadb-client
                 ;;
             dnf)
-                dnf install -y -q mariadb-server mariadb >/dev/null 2>&1
+                dnf install -y mariadb-server mariadb
                 ;;
         esac
     fi
@@ -438,24 +483,66 @@ install_mysql() {
         print_warning "Standard password set failed. Trying recovery mode..."
         
         # Stop service
+        print_info "Stopping MariaDB service..."
         systemctl stop mariadb
+        
+        # Ensure it's stopped
+        if command -v pkill >/dev/null; then
+            pkill -f mariadbd 2>/dev/null || true
+            pkill -f mysqld 2>/dev/null || true
+        fi
+        sleep 2
         
         # Start with skip-grant-tables
         mkdir -p /var/run/mysqld
         chown mysql:mysql /var/run/mysqld
-        mysqld_safe --skip-grant-tables --skip-networking &
+        
+        print_info "Starting MariaDB in safe mode..."
+        # Redirect output to prevent hanging on pipe and run in background
+        mysqld_safe --skip-grant-tables --skip-networking >/dev/null 2>&1 &
         PID=$!
-        sleep 10
+        
+        # Wait for socket to be ready
+        print_info "Waiting for database socket..."
+        local socket_ready=0
+        for i in {1..30}; do
+            if [ -S /var/run/mysqld/mysqld.sock ]; then
+                socket_ready=1
+                break
+            fi
+            sleep 1
+        done
+        
+        if [ $socket_ready -eq 0 ]; then
+            print_warning "Socket not found, waiting extra time..."
+            sleep 5
+        fi
         
         # Reset password
-        mysql -e "FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASS'; FLUSH PRIVILEGES;"
+        print_info "Resetting password..."
+        # Try multiple methods to reset password
+        if mysql -u root --protocol=socket -e "FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASS'; FLUSH PRIVILEGES;" 2>/dev/null; then
+             print_success "Password reset method 1 success."
+        elif mysql -u root --protocol=socket -e "FLUSH PRIVILEGES; SET PASSWORD FOR 'root'@'localhost' = PASSWORD('$MYSQL_ROOT_PASS'); FLUSH PRIVILEGES;" 2>/dev/null; then
+             print_success "Password reset method 2 success."
+        elif mysql -u root --protocol=socket -D mysql -e "FLUSH PRIVILEGES; UPDATE user SET authentication_string=PASSWORD('$MYSQL_ROOT_PASS') WHERE User='root'; FLUSH PRIVILEGES;" 2>/dev/null; then
+             print_success "Password reset method 3 success."
+        else
+             print_error "All password reset methods failed."
+        fi
         
         # Stop recovery mode
-        kill $PID
+        print_info "Stopping safe mode..."
+        kill $PID 2>/dev/null
         wait $PID 2>/dev/null
+        if command -v pkill >/dev/null; then
+            pkill -f mariadbd 2>/dev/null || true
+            pkill -f mysqld 2>/dev/null || true
+        fi
         sleep 5
         
         # Restart service
+        print_info "Restarting MariaDB service..."
         systemctl start mariadb
         
         # Verify
@@ -500,12 +587,12 @@ install_redis() {
     
     case "$PKG_MANAGER" in
         apt-get)
-            apt-get install -y -qq redis-server >/dev/null 2>&1
+            apt-get install -y redis-server
             systemctl enable redis-server
             systemctl start redis-server
             ;;
         dnf)
-            dnf install -y -q redis >/dev/null 2>&1
+            dnf install -y redis
             systemctl enable redis
             systemctl start redis
             ;;
@@ -532,7 +619,7 @@ install_phpmyadmin() {
             # Ensure non-interactive for phpmyadmin
             export DEBIAN_FRONTEND=noninteractive
             
-            apt-get install -y -qq php-fpm php-mysql php-mbstring php-zip php-gd php-json php-curl php-xml >/dev/null 2>&1
+            apt-get install -y php-fpm php-mysql php-mbstring php-zip php-gd php-json php-curl php-xml
             
             # Pre-configure debconf for phpmyadmin to avoid prompts and errors
             # We set dbconfig-install to false because we already have a DB and we don't want it to try to create one with random passwords we don't know
@@ -541,12 +628,12 @@ install_phpmyadmin() {
             echo "phpmyadmin phpmyadmin/dbconfig-install boolean false" | debconf-set-selections
             echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect " | debconf-set-selections
             
-            apt-get install -y -qq phpmyadmin >/dev/null 2>&1
+            apt-get install -y phpmyadmin
             ;;
         dnf)
-            dnf install -y -q php php-fpm php-mysqlnd php-mbstring php-zip php-gd php-json php-xml >/dev/null 2>&1
+            dnf install -y php php-fpm php-mysqlnd php-mbstring php-zip php-gd php-json php-xml
             if dnf list phpmyadmin >/dev/null 2>&1; then
-                dnf install -y -q phpmyadmin >/dev/null 2>&1
+                dnf install -y phpmyadmin
             else
                 print_warning "phpMyAdmin package not found in default repos. Skipping..."
                 return
@@ -600,10 +687,10 @@ install_certbot() {
     
     case "$PKG_MANAGER" in
         apt-get)
-            apt-get install -y -qq certbot python3-certbot-nginx >/dev/null 2>&1
+            apt-get install -y certbot python3-certbot-nginx
             ;;
         dnf)
-            dnf install -y -q certbot python3-certbot-nginx >/dev/null 2>&1
+            dnf install -y certbot python3-certbot-nginx
             ;;
     esac
     
@@ -618,18 +705,18 @@ setup_firewall() {
     
     case "$PKG_MANAGER" in
         apt-get)
-            ufw --force enable >/dev/null 2>&1
-            ufw allow 22/tcp >/dev/null 2>&1
-            ufw allow 80/tcp >/dev/null 2>&1
-            ufw allow 443/tcp >/dev/null 2>&1
+            ufw --force enable
+            ufw allow 22/tcp
+            ufw allow 80/tcp
+            ufw allow 443/tcp
             ;;
         dnf)
-            systemctl enable firewalld >/dev/null 2>&1
-            systemctl start firewalld >/dev/null 2>&1
-            firewall-cmd --permanent --add-service=ssh >/dev/null 2>&1
-            firewall-cmd --permanent --add-service=http >/dev/null 2>&1
-            firewall-cmd --permanent --add-service=https >/dev/null 2>&1
-            firewall-cmd --reload >/dev/null 2>&1
+            systemctl enable firewalld
+            systemctl start firewalld
+            firewall-cmd --permanent --add-service=ssh
+            firewall-cmd --permanent --add-service=http
+            firewall-cmd --permanent --add-service=https
+            firewall-cmd --reload
             ;;
     esac
     
