@@ -887,15 +887,27 @@ install_pgadmin() {
     # Install pgadmin4
     print_info "Installing pgAdmin4 package (this may take a while)..."
     pip install --upgrade pip >/dev/null 2>&1
-    pip install pgadmin4 gunicorn >/dev/null 2>&1
+    pip install wheel >/dev/null 2>&1
     
-    # Find package dir
-    PGADMIN_PKG_DIR=$(find "$PGADMIN_DIR/venv" -name "pgadmin4" -type d | grep "site-packages" | head -n 1)
+    if ! pip install pgadmin4 gunicorn; then
+        print_error "Failed to install pgadmin4 via pip. Check logs."
+        return
+    fi
+    
+    # Find package dir reliably using python
+    PGADMIN_PKG_DIR=$(python -c "import os, pgadmin4; print(os.path.dirname(pgadmin4.__file__))" 2>/dev/null)
+    
+    if [ -z "$PGADMIN_PKG_DIR" ]; then
+        # Fallback to find
+        PGADMIN_PKG_DIR=$(find "$PGADMIN_DIR/venv" -name "pgadmin4" -type d | grep "site-packages" | head -n 1)
+    fi
     
     if [ -z "$PGADMIN_PKG_DIR" ]; then
         print_error "Could not find pgadmin4 package directory"
         return
     fi
+    
+    print_info "pgAdmin4 location: $PGADMIN_PKG_DIR"
     
     # Generate credentials
     PGADMIN_EMAIL="admin@ndc.local"
@@ -922,11 +934,13 @@ EOF
     export PGADMIN_SETUP_EMAIL="$PGADMIN_EMAIL"
     export PGADMIN_SETUP_PASSWORD="$PGADMIN_PASS"
     
-    # Run setup
+    # Run setup with error handling and output
     if [ -f "$PGADMIN_PKG_DIR/setup.py" ]; then
-        python "$PGADMIN_PKG_DIR/setup.py" >/dev/null 2>&1
+        if ! python "$PGADMIN_PKG_DIR/setup.py"; then
+            print_warning "Standard setup failed. Trying to continue anyway..."
+        fi
     else
-        print_warning "setup.py not found, trying 'flask db upgrade'..."
+        print_warning "setup.py not found, skipping manual setup..."
     fi
     
     # PM2 Config (Gunicorn binds to 5051, Nginx proxies 5050 -> 5051)
