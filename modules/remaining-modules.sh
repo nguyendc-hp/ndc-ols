@@ -113,9 +113,10 @@ install_mongo_express() {
             print_step "Securing MongoDB..."
             bash "$NDC_INSTALL_DIR/modules/mongodb-secure-setup.sh"
             print_info ""
-            print_info "MongoDB has been secured. Please provide the credentials below:"
-            read_input "MongoDB Admin Username (from security setup)" "admin_823b82" mongo_user
-            read_input "MongoDB Admin Password (from security setup)" "" mongo_pass
+            print_info "MongoDB has been secured."
+            print_info "Please enter the Admin credentials you just created in the previous step:"
+            read_input "MongoDB Admin Username" "admin" mongo_user
+            read_input "MongoDB Admin Password" "" mongo_pass
             
             if [ -z "$mongo_pass" ]; then
                 print_error "MongoDB password cannot be empty!"
@@ -129,7 +130,7 @@ install_mongo_express() {
         # MongoDB is already secured
         print_success "✅ MongoDB is already secured"
         print_info ""
-        read_input "MongoDB Admin Username" "admin_823b82" mongo_user
+        read_input "MongoDB Admin Username" "admin" mongo_user
         read_input "MongoDB Admin Password" "" mongo_pass
         
         if [ -z "$mongo_pass" ]; then
@@ -161,7 +162,7 @@ install_mongo_express() {
     npm uninstall -g mongo-express 2>/dev/null || true
     
     # Install latest version (compatible with MongoDB 7.x)
-    print_step "Installing Mongo Express (latest version for MongoDB 7.x compatibility)..."
+    print_step "Installing Mongo Express (latest version)..."
     if ! npm install -g mongo-express; then
         print_error "Mongo Express installation failed. Please check npm logs."
         return
@@ -172,7 +173,7 @@ install_mongo_express() {
     
     # Verify installation
     if [ ! -d "$MONGO_EXPRESS_HOME" ]; then
-        print_error "Mongo Express installation failed. Please check npm logs."
+        print_error "Mongo Express installation failed. Directory not found: $MONGO_EXPRESS_HOME"
         return
     fi
     
@@ -180,40 +181,36 @@ install_mongo_express() {
     print_step "Configuring Mongo Express with MongoDB authentication..."
     
     # Create ecosystem file with full MongoDB authentication
-    cat > "/etc/ndc-ols/mongo-express.config.js" <<'EOFCONFIG'
+    # Note: ME_CONFIG_MONGODB_ENABLE_ADMIN must be 'true' for admin auth
+    cat > "/etc/ndc-ols/mongo-express.config.js" <<EOFCONFIG
 module.exports = {
   apps: [{
     name: 'mongo-express',
     script: 'app.js',
-    cwd: 'MONGO_EXPRESS_HOME',
+    cwd: '$MONGO_EXPRESS_HOME',
+    instances: 1,
+    autorestart: true,
+    watch: false,
     env: {
-      ME_CONFIG_MONGODB_ENABLE_ADMIN: 'false',
+      NODE_ENV: 'production',
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: 'true',
       ME_CONFIG_MONGODB_SERVER: 'localhost',
       ME_CONFIG_MONGODB_PORT: '27017',
       ME_CONFIG_MONGODB_AUTH_DATABASE: 'admin',
-      ME_CONFIG_MONGODB_AUTH_USERNAME: 'MONGO_USER',
-      ME_CONFIG_MONGODB_AUTH_PASSWORD: 'MONGO_PASS',
-      ME_CONFIG_BASICAUTH_USERNAME: 'GUI_USER',
-      ME_CONFIG_BASICAUTH_PASSWORD: 'GUI_PASS',
+      ME_CONFIG_MONGODB_AUTH_USERNAME: '$mongo_user',
+      ME_CONFIG_MONGODB_AUTH_PASSWORD: '$mongo_pass',
+      ME_CONFIG_BASICAUTH_USERNAME: '$gui_user',
+      ME_CONFIG_BASICAUTH_PASSWORD: '$gui_pass',
       ME_CONFIG_SITE_HOST: '0.0.0.0',
       ME_CONFIG_SITE_BASEURL: '/',
+      ME_CONFIG_SITE_COOKIE_SECRET: 'secret_$(date +%s)',
+      ME_CONFIG_SITE_SESSION_SECRET: 'secret_$(date +%s)',
       VCAP_APP_HOST: '0.0.0.0',
-      HOST: '0.0.0.0',
-      PORT: 'PORT_NUM',
-      VCAP_APP_PORT: 'PORT_NUM',
-      NODE_ENV: 'production'
+      PORT: '$port'
     }
   }]
 };
 EOFCONFIG
-
-    # Replace placeholders with actual values
-    sed -i "s|MONGO_EXPRESS_HOME|$MONGO_EXPRESS_HOME|g" /etc/ndc-ols/mongo-express.config.js
-    sed -i "s|MONGO_USER|$mongo_user|g" /etc/ndc-ols/mongo-express.config.js
-    sed -i "s|MONGO_PASS|$mongo_pass|g" /etc/ndc-ols/mongo-express.config.js
-    sed -i "s|GUI_USER|$gui_user|g" /etc/ndc-ols/mongo-express.config.js
-    sed -i "s|GUI_PASS|$gui_pass|g" /etc/ndc-ols/mongo-express.config.js
-    sed -i "s|PORT_NUM|$port|g" /etc/ndc-ols/mongo-express.config.js
 
     # Stop and delete existing process if it exists to ensure config update
     pm2 delete mongo-express 2>/dev/null || true
@@ -275,8 +272,6 @@ revert_mongo_express_to_ip() {
     
     # Update config to bind to 0.0.0.0
     sed -i "s/ME_CONFIG_SITE_HOST: 'localhost'/ME_CONFIG_SITE_HOST: '0.0.0.0'/g" /etc/ndc-ols/mongo-express.config.js
-    sed -i "s/VCAP_APP_HOST: 'localhost'/VCAP_APP_HOST: '0.0.0.0'/g" /etc/ndc-ols/mongo-express.config.js
-    sed -i "s/HOST: 'localhost'/HOST: '0.0.0.0'/g" /etc/ndc-ols/mongo-express.config.js
     
     # Restart Mongo Express
     pm2 restart mongo-express
@@ -332,30 +327,28 @@ secure_mongo_express() {
         return
     fi
     
-    read_input "Mongo Express Port" "$CURRENT_PORT" port
+    print_step "Creating Nginx Proxy config..."
     
-    print_step "Creating Nginx HTTP config (for Let's Encrypt validation)..."
-    
-    # First create HTTP-only config for Let's Encrypt
-    cat > "/etc/nginx/sites-available/$domain" <<'EOFNGINX_HTTP'
+    # Create Nginx config (HTTP first, let Certbot handle SSL upgrade)
+    cat > "/etc/nginx/sites-available/$domain" <<EOFNGINX
 server {
     listen 80;
     listen [::]:80;
-    server_name DOMAIN_NAME;
+    server_name $domain;
 
-    # Allow Let's Encrypt validation
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-
-    # Redirect all other traffic to HTTPS
     location / {
-        return 301 https://$server_name$request_uri;
+        proxy_pass http://127.0.0.1:$CURRENT_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
     }
 }
-EOFNGINX_HTTP
-
-    sed -i "s|DOMAIN_NAME|$domain|g" /etc/nginx/sites-available/$domain
+EOFNGINX
 
     # Enable site
     ln -sf "/etc/nginx/sites-available/$domain" "/etc/nginx/sites-enabled/" || true
@@ -379,112 +372,20 @@ EOFNGINX_HTTP
         apt install -y certbot python3-certbot-nginx
     fi
 
-    # Create certbot directories
-    mkdir -p /var/www/certbot
-
-    # Install SSL certificate
-    if ! certbot certonly --webroot -w /var/www/certbot -d "$domain" --non-interactive --agree-tos --email "admin@$domain" --quiet 2>/dev/null; then
+    # Use certbot --nginx to automatically configure SSL and Redirect
+    if ! certbot --nginx -d "$domain" --non-interactive --agree-tos --email "admin@$domain" --redirect; then
         print_error "Failed to obtain SSL certificate for $domain"
-        print_info "Please check domain DNS and try again manually:"
-        print_info "  certbot certonly --webroot -w /var/www/certbot -d $domain"
-        rm "/etc/nginx/sites-available/$domain"
+        print_info "Please check domain DNS and try again."
         return
     fi
 
-    print_success "SSL certificate obtained!"
-    
-    print_step "Creating Nginx HTTPS config with proper proxy headers..."
-    
-    # Now create full HTTPS config with proxy
-    cat > "/etc/nginx/sites-available/$domain" <<'EOFNGINX_HTTPS'
-# HTTP redirect to HTTPS
-server {
-    listen 80;
-    listen [::]:80;
-    server_name DOMAIN_NAME;
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-
-    location / {
-        return 301 https://$server_name$request_uri;
-    }
-}
-
-# HTTPS server with Mongo Express proxy
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name DOMAIN_NAME;
-
-    # SSL configuration
-    ssl_certificate /etc/letsencrypt/live/DOMAIN_NAME/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/DOMAIN_NAME/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-    ssl_prefer_server_ciphers on;
-    ssl_session_cache shared:SSL:10m;
-    ssl_session_timeout 10m;
-
-    # Security headers
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-
-    # Proxy to Mongo Express
-    location / {
-        proxy_pass http://localhost:PORT_NUM;
-        
-        # HTTP version and upgrade
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        
-        # Host and forwarding
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Host $server_name;
-        proxy_set_header X-Forwarded-Port 443;
-        
-        # Cache and timeout
-        proxy_cache_bypass $http_upgrade;
-        proxy_read_timeout 90;
-        proxy_connect_timeout 90;
-        proxy_send_timeout 90;
-        
-        # Buffering
-        proxy_buffering on;
-        proxy_buffer_size 4k;
-        proxy_buffers 8 4k;
-    }
-}
-EOFNGINX_HTTPS
-
-    # Replace placeholders
-    sed -i "s|DOMAIN_NAME|$domain|g" /etc/nginx/sites-available/$domain
-    sed -i "s|PORT_NUM|$port|g" /etc/nginx/sites-available/$domain
-
-    # Test and reload Nginx
-    if ! nginx -t 2>/dev/null; then
-        print_error "Nginx HTTPS configuration test failed!"
-        rm "/etc/nginx/sites-available/$domain"
-        return
-    fi
-    
-    systemctl reload nginx
-    print_success "Nginx HTTPS config applied!"
+    print_success "SSL certificate obtained and Nginx configured!"
 
     # Update Mongo Express config to bind to localhost only
     print_step "Securing Mongo Express (binding to localhost only)..."
     
     # Update the PM2 config to bind to localhost
     sed -i "s/ME_CONFIG_SITE_HOST: '0.0.0.0'/ME_CONFIG_SITE_HOST: 'localhost'/g" /etc/ndc-ols/mongo-express.config.js
-    sed -i "s/VCAP_APP_HOST: '0.0.0.0'/VCAP_APP_HOST: 'localhost'/g" /etc/ndc-ols/mongo-express.config.js
-    sed -i "s/HOST: '0.0.0.0'/HOST: 'localhost'/g" /etc/ndc-ols/mongo-express.config.js
     
     # Restart Mongo Express
     pm2 restart mongo-express --update-env
@@ -493,23 +394,18 @@ EOFNGINX_HTTPS
     
     # Close firewall port
     if command_exists ufw; then
-        ufw delete allow $port/tcp 2>/dev/null || true
+        ufw delete allow $CURRENT_PORT/tcp 2>/dev/null || true
     elif command_exists firewall-cmd; then
-        firewall-cmd --permanent --remove-port=$port/tcp 2>/dev/null || true
+        firewall-cmd --permanent --remove-port=$CURRENT_PORT/tcp 2>/dev/null || true
         firewall-cmd --reload 2>/dev/null || true
     fi
     
     print_success "Mongo Express is now fully secured with HTTPS!"
     print_info "======================================"
     print_info "✅ Access: https://$domain"
-    print_info "✅ SSL Certificate: Let's Encrypt (auto-renew)"
-    print_info "✅ HTTP redirects to HTTPS"
-    print_info "✅ Public port $port is closed"
+    print_info "✅ Public port $CURRENT_PORT is closed"
     print_info "✅ Only accessible via domain"
     print_info "======================================"
-    print_info "To restart: pm2 restart mongo-express"
-    print_info "To view logs: pm2 logs mongo-express"
-    print_info "SSL renewal: certbot renew (auto)"
     
     press_any_key
 }
