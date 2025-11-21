@@ -129,16 +129,21 @@ wait_for_apt() {
     
     local i=0
     local stale_lock_count=0
-    local max_wait=300  # 5 minutes
+    local max_wait=600  # 10 minutes (increased from 5)
+    local last_pid=""
+    local pid_change_count=0
+    
+    print_info "Checking if package manager is busy..."
     
     while true; do
         local running_proc=""
+        local current_pid=""
         
         # Check common package manager processes
-        if pgrep -x "apt" >/dev/null 2>&1; then running_proc="apt"; fi
-        if pgrep -x "apt-get" >/dev/null 2>&1; then running_proc="apt-get"; fi
-        if pgrep -x "dpkg" >/dev/null 2>&1; then running_proc="dpkg"; fi
-        if pgrep -f "unattended-upgr" >/dev/null 2>&1; then running_proc="unattended-upgrades"; fi
+        if pgrep -x "apt" >/dev/null 2>&1; then running_proc="apt"; current_pid=$(pgrep -x apt); fi
+        if pgrep -x "apt-get" >/dev/null 2>&1; then running_proc="apt-get"; current_pid=$(pgrep -x apt-get); fi
+        if pgrep -x "dpkg" >/dev/null 2>&1; then running_proc="dpkg"; current_pid=$(pgrep -x dpkg); fi
+        if pgrep -f "unattended-upgr" >/dev/null 2>&1; then running_proc="unattended-upgrades"; current_pid=$(pgrep -f "unattended-upgr"); fi
         
         local lock_exists=0
         [ -f /var/lib/dpkg/lock-frontend ] && lock_exists=1
@@ -147,27 +152,39 @@ wait_for_apt() {
         
         # If no process and no lock, we are good
         if [ -z "$running_proc" ] && [ $lock_exists -eq 0 ]; then
+            print_success "Package manager is ready"
             break
         fi
         
-        if [ $i -eq 0 ]; then
-            print_info "Waiting for package manager to be available..."
-        fi
-        
         if [ -n "$running_proc" ]; then
-            if [ $((i % 15)) -eq 0 ]; then
-                print_info "Process '$running_proc' is running. Waiting... (${i}s)"
+            # Track if process PID changed (i.e., completed and new one started)
+            if [ "$last_pid" != "$current_pid" ] && [ -n "$last_pid" ]; then
+                pid_change_count=$((pid_change_count+1))
             fi
+            last_pid="$current_pid"
+            
+            if [ $((i % 30)) -eq 0 ]; then
+                print_info "Process '$running_proc' is still running. Waiting... (${i}s)"
+            fi
+            
+            # If unattended-upgrades appears stuck (same PID for too long), try to stop it
+            if [ "$running_proc" = "unattended-upgrades" ] && [ $i -gt 120 ]; then
+                print_warning "unattended-upgrades running too long. Attempting to stop..."
+                systemctl stop unattended-upgrades 2>/dev/null || true
+                sleep 5
+            fi
+            
             stale_lock_count=0
         else
             # Lock exists but no process found
             stale_lock_count=$((stale_lock_count+1))
-            if [ $stale_lock_count -gt 10 ]; then
+            if [ $stale_lock_count -gt 5 ]; then
                 print_warning "Stale lock detected. Cleaning up..."
                 rm -f /var/lib/dpkg/lock-frontend 2>/dev/null || true
                 rm -f /var/lib/dpkg/lock 2>/dev/null || true
                 rm -f /var/lib/apt/lists/lock 2>/dev/null || true
                 dpkg --configure -a >/dev/null 2>&1 || true
+                sleep 2
                 break
             fi
         fi
@@ -176,7 +193,16 @@ wait_for_apt() {
         i=$((i+2))
         
         if [ $i -gt $max_wait ]; then
-            print_warning "Timeout waiting for package manager (${max_wait}s). Proceeding anyway..."
+            print_warning "Timeout waiting for package manager (${max_wait}s). Force clearing locks..."
+            # Force clear all locks
+            killall -9 unattended-upgrades 2>/dev/null || true
+            killall -9 apt-get 2>/dev/null || true
+            killall -9 dpkg 2>/dev/null || true
+            sleep 3
+            rm -f /var/lib/dpkg/lock* 2>/dev/null || true
+            rm -f /var/lib/apt/lists/lock 2>/dev/null || true
+            dpkg --configure -a >/dev/null 2>&1 || true
+            print_success "Locks cleared. Proceeding with installation..."
             break
         fi
     done
