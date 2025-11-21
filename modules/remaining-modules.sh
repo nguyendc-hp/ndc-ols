@@ -99,19 +99,38 @@ install_mongo_express() {
         sleep 2
     fi
 
-    # Get config
-    read_input "GUI Username" "admin" gui_user
-    read_input "GUI Password" "$(generate_password)" gui_pass
+    # Get MongoDB credentials
+    print_info "MongoDB must be secured with user/password for Mongo Express to work properly."
+    read_input "MongoDB Admin Username" "admin_823b82" mongo_user
+    read_input "MongoDB Admin Password" "" mongo_pass
+    
+    if [ -z "$mongo_pass" ]; then
+        print_error "MongoDB password cannot be empty!"
+        return
+    fi
+
+    # Verify MongoDB connection with credentials
+    print_step "Verifying MongoDB connection with provided credentials..."
+    if ! echo "db.adminCommand('ping')" | mongosh "mongodb://$mongo_user:$mongo_pass@localhost:27017/admin?authSource=admin" &>/dev/null; then
+        print_error "Failed to connect to MongoDB with provided credentials!"
+        print_info "Please ensure MongoDB is secured and credentials are correct."
+        return
+    fi
+    print_success "MongoDB connection verified!"
+
+    # Get Mongo Express GUI credentials
+    read_input "Mongo Express GUI Username" "admin" gui_user
+    read_input "Mongo Express GUI Password" "$(generate_password)" gui_pass
     read_input "Port" "8081" port
     
     # Uninstall previous version to ensure clean slate
-    npm uninstall -g mongo-express
+    npm uninstall -g mongo-express 2>/dev/null || true
     
-    # Install stable version 0.54.0 (Most compatible)
-    print_step "Installing Mongo Express (v0.54.0)..."
-    if ! npm install -g mongo-express@0.54.0; then
-        print_warning "v0.54.0 failed. Trying latest version..."
-        npm install -g mongo-express
+    # Install latest version (compatible with MongoDB 7.x)
+    print_step "Installing Mongo Express (latest version for MongoDB 7.x compatibility)..."
+    if ! npm install -g mongo-express; then
+        print_error "Mongo Express installation failed. Please check npm logs."
+        return
     fi
     
     # Get mongo-express path for CWD
@@ -124,48 +143,82 @@ install_mongo_express() {
     fi
     
     # Start with PM2
-    print_step "Starting Mongo Express..."
+    print_step "Configuring Mongo Express with MongoDB authentication..."
     
-    # Create ecosystem file
-    cat > "/etc/ndc-ols/mongo-express.config.js" <<EOF
+    # Create ecosystem file with full MongoDB authentication
+    cat > "/etc/ndc-ols/mongo-express.config.js" <<'EOFCONFIG'
 module.exports = {
   apps: [{
     name: 'mongo-express',
     script: 'app.js',
-    cwd: '$MONGO_EXPRESS_HOME',
+    cwd: 'MONGO_EXPRESS_HOME',
     env: {
-      ME_CONFIG_MONGODB_ENABLE_ADMIN: 'true',
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: 'false',
       ME_CONFIG_MONGODB_SERVER: 'localhost',
-      ME_CONFIG_BASICAUTH_USERNAME: '$gui_user',
-      ME_CONFIG_BASICAUTH_PASSWORD: '$gui_pass',
+      ME_CONFIG_MONGODB_PORT: '27017',
+      ME_CONFIG_MONGODB_AUTH_DATABASE: 'admin',
+      ME_CONFIG_MONGODB_AUTH_USERNAME: 'MONGO_USER',
+      ME_CONFIG_MONGODB_AUTH_PASSWORD: 'MONGO_PASS',
+      ME_CONFIG_BASICAUTH_USERNAME: 'GUI_USER',
+      ME_CONFIG_BASICAUTH_PASSWORD: 'GUI_PASS',
       ME_CONFIG_SITE_HOST: '0.0.0.0',
+      ME_CONFIG_SITE_BASEURL: '/',
       VCAP_APP_HOST: '0.0.0.0',
       HOST: '0.0.0.0',
-      PORT: '$port',
-      VCAP_APP_PORT: '$port'
+      PORT: 'PORT_NUM',
+      VCAP_APP_PORT: 'PORT_NUM',
+      NODE_ENV: 'production'
     }
   }]
 };
-EOF
+EOFCONFIG
+
+    # Replace placeholders with actual values
+    sed -i "s|MONGO_EXPRESS_HOME|$MONGO_EXPRESS_HOME|g" /etc/ndc-ols/mongo-express.config.js
+    sed -i "s|MONGO_USER|$mongo_user|g" /etc/ndc-ols/mongo-express.config.js
+    sed -i "s|MONGO_PASS|$mongo_pass|g" /etc/ndc-ols/mongo-express.config.js
+    sed -i "s|GUI_USER|$gui_user|g" /etc/ndc-ols/mongo-express.config.js
+    sed -i "s|GUI_PASS|$gui_pass|g" /etc/ndc-ols/mongo-express.config.js
+    sed -i "s|PORT_NUM|$port|g" /etc/ndc-ols/mongo-express.config.js
 
     # Stop and delete existing process if it exists to ensure config update
     pm2 delete mongo-express 2>/dev/null || true
+    sleep 1
 
-    pm2 start "/etc/ndc-ols/mongo-express.config.js"
+    # Start Mongo Express with new config
+    print_step "Starting Mongo Express..."
+    if ! pm2 start "/etc/ndc-ols/mongo-express.config.js"; then
+        print_error "Failed to start Mongo Express with PM2!"
+        return
+    fi
+    
     pm2 save
+    sleep 2
+    
+    # Verify Mongo Express started successfully
+    if ! pm2 list | grep -q "mongo-express"; then
+        print_error "Mongo Express failed to start!"
+        print_info "Run: pm2 logs mongo-express"
+        return
+    fi
     
     # Open firewall
     if command_exists ufw; then
-        ufw allow $port/tcp
+        ufw allow $port/tcp 2>/dev/null || true
     elif command_exists firewall-cmd; then
-        firewall-cmd --permanent --add-port=$port/tcp
-        firewall-cmd --reload
+        firewall-cmd --permanent --add-port=$port/tcp 2>/dev/null || true
+        firewall-cmd --reload 2>/dev/null || true
     fi
     
-    print_success "Mongo Express installed!"
+    print_success "Mongo Express installed and started successfully!"
+    print_info "======================================"
     print_info "Access: http://YOUR_IP:$port"
-    print_info "User: $gui_user"
-    print_info "Pass: $gui_pass"
+    print_info "GUI Username: $gui_user"
+    print_info "GUI Password: $gui_pass"
+    print_info "MongoDB User: $mongo_user"
+    print_info "======================================"
+    print_info "To view logs: pm2 logs mongo-express"
+    print_info "To restart: pm2 restart mongo-express"
     
     if ask_yes_no "Do you want to secure it with a domain now?" "y"; then
         secure_mongo_express
@@ -220,7 +273,7 @@ revert_mongo_express_to_ip() {
 }
 
 secure_mongo_express() {
-    print_header "SECURE MONGO EXPRESS"
+    print_header "SECURE MONGO EXPRESS WITH DOMAIN"
     
     # Check if Mongo Express is running
     if ! pm2 list | grep -q "mongo-express"; then
@@ -228,75 +281,114 @@ secure_mongo_express() {
         return
     fi
     
+    # Get current Mongo Express port from PM2 config
+    if [ ! -f "/etc/ndc-ols/mongo-express.config.js" ]; then
+        print_error "Mongo Express config not found!"
+        return
+    fi
+    
+    CURRENT_PORT=$(grep "PORT:" /etc/ndc-ols/mongo-express.config.js | grep -oP "'\K[0-9]+" | head -1)
+    if [ -z "$CURRENT_PORT" ]; then
+        CURRENT_PORT="8081"
+    fi
+
     read_input "Enter Domain (e.g., db.yourdomain.com)" "" domain
     if [ -z "$domain" ]; then
         print_error "Domain is required!"
         return
     fi
     
-    read_input "Mongo Express Port" "8081" port
+    read_input "Mongo Express Port" "$CURRENT_PORT" port
     
-    print_step "Configuring Nginx..."
+    print_step "Configuring Nginx reverse proxy..."
     
-    # Create Nginx config
-    cat > "/etc/nginx/sites-available/$domain" <<EOF
+    # Create Nginx config with proper headers
+    cat > "/etc/nginx/sites-available/$domain" <<'EOFNGINX'
 server {
     listen 80;
-    server_name $domain;
+    server_name DOMAIN_NAME;
+
+    # Redirect HTTP to HTTPS (if SSL is enabled)
+    # Uncomment after installing SSL
+    # return 301 https://$server_name$request_uri;
 
     location / {
-        proxy_pass http://localhost:$port;
+        proxy_pass http://localhost:PORT_NUM;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_cache_bypass \$http_upgrade;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 90;
     }
 }
-EOF
+EOFNGINX
+
+    # Replace placeholders
+    sed -i "s|DOMAIN_NAME|$domain|g" /etc/nginx/sites-available/$domain
+    sed -i "s|PORT_NUM|$port|g" /etc/nginx/sites-available/$domain
 
     # Enable site
-    ln -sf "/etc/nginx/sites-available/$domain" "/etc/nginx/sites-enabled/"
+    ln -sf "/etc/nginx/sites-available/$domain" "/etc/nginx/sites-enabled/" || true
     
     # Test and reload Nginx
-    if nginx -t; then
-        systemctl reload nginx
-        print_success "Nginx configured!"
-    else
-        print_error "Nginx configuration failed!"
+    if ! nginx -t 2>/dev/null; then
+        print_error "Nginx configuration test failed!"
+        rm "/etc/nginx/sites-available/$domain"
         return
     fi
     
+    systemctl reload nginx
+    print_success "Nginx configured!"
+
     # SSL
-    if ask_yes_no "Install SSL (HTTPS)?" "y"; then
-        certbot --nginx -d "$domain" --non-interactive --agree-tos --email admin@$domain --redirect
+    if ask_yes_no "Install SSL Certificate (HTTPS) with Let's Encrypt?" "y"; then
+        if command_exists certbot; then
+            print_step "Installing SSL certificate for $domain..."
+            if certbot --nginx -d "$domain" --non-interactive --agree-tos --email "admin@$domain" --redirect 2>/dev/null; then
+                print_success "SSL certificate installed!"
+            else
+                print_warning "SSL installation failed. Domain still accessible via HTTP."
+            fi
+        else
+            print_warning "Certbot not installed. Skipping SSL setup."
+            print_info "To install later: apt install certbot python3-certbot-nginx"
+        fi
     fi
+
+    # Update Mongo Express config to bind to localhost only
+    print_step "Securing Mongo Express (binding to localhost only)..."
     
-    # Secure Mongo Express (Bind to localhost only)
-    print_step "Securing Mongo Express (Closing public port)..."
-    
-    # Update config to bind only to localhost
+    # Update the PM2 config to bind to localhost
     sed -i "s/ME_CONFIG_SITE_HOST: '0.0.0.0'/ME_CONFIG_SITE_HOST: 'localhost'/g" /etc/ndc-ols/mongo-express.config.js
     sed -i "s/VCAP_APP_HOST: '0.0.0.0'/VCAP_APP_HOST: 'localhost'/g" /etc/ndc-ols/mongo-express.config.js
     sed -i "s/HOST: '0.0.0.0'/HOST: 'localhost'/g" /etc/ndc-ols/mongo-express.config.js
     
     # Restart Mongo Express
-    pm2 restart mongo-express
+    pm2 restart mongo-express --update-env
     pm2 save
+    sleep 2
     
     # Close firewall port
     if command_exists ufw; then
-        ufw delete allow $port/tcp
+        ufw delete allow $port/tcp 2>/dev/null || true
     elif command_exists firewall-cmd; then
-        firewall-cmd --permanent --remove-port=$port/tcp
-        firewall-cmd --reload
+        firewall-cmd --permanent --remove-port=$port/tcp 2>/dev/null || true
+        firewall-cmd --reload 2>/dev/null || true
     fi
     
     print_success "Mongo Express is now secured!"
-    print_info "Access: https://$domain"
+    print_info "======================================"
+    print_info "Access: http://$domain (or https://$domain if SSL enabled)"
     print_info "Public port $port has been closed."
+    print_info "Only accessible via domain."
+    print_info "======================================"
+    print_info "To restart: pm2 restart mongo-express"
+    print_info "To view logs: pm2 logs mongo-express"
+    
     press_any_key
 }
 
