@@ -92,11 +92,26 @@ self_update_menu() {
 install_mongo_express() {
     print_step "Installing Mongo Express..."
     
+    # Check if mongosh is installed
+    if ! command -v mongosh &> /dev/null; then
+        print_warning "mongosh is not installed. Installing..."
+        wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | sudo apt-key add -
+        echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+        apt-get update -qq
+        apt-get install -y mongodb-mongosh
+    fi
+
     # Check if MongoDB is running
     if ! systemctl is-active --quiet mongod; then
         print_warning "MongoDB is not running. Attempting to start..."
         systemctl start mongod
-        sleep 2
+        sleep 5
+    fi
+    
+    # Double check if it started
+    if ! systemctl is-active --quiet mongod; then
+        print_error "MongoDB failed to start! Please check logs: journalctl -u mongod"
+        return
     fi
 
     print_header "MongoDB Authentication Setup"
@@ -104,7 +119,10 @@ install_mongo_express() {
     print_info ""
     
     # Check if MongoDB is already secured
-    if echo "db.adminCommand('ping')" | mongosh "mongodb://localhost:27017/admin" &>/dev/null 2>&1; then
+    # We use a specific exit code check. 
+    # 0 = Success (No auth needed)
+    # 1 = Error (Could be auth error or connection error)
+    if mongosh --quiet --host localhost --port 27017 --eval "db.adminCommand('ping')" &>/dev/null; then
         # MongoDB is NOT secured (no auth required)
         print_warning "⚠️  MongoDB is NOT secured yet (no authentication enabled)"
         print_info ""
@@ -127,8 +145,8 @@ install_mongo_express() {
             return
         fi
     else
-        # MongoDB is already secured
-        print_success "✅ MongoDB is already secured"
+        # MongoDB is likely secured (or connection failed, but we checked service is up)
+        print_success "✅ MongoDB appears to be secured (Authentication required)"
         print_info ""
         read_input "MongoDB Admin Username" "admin" mongo_user
         read_input "MongoDB Admin Password" "" mongo_pass
@@ -141,13 +159,17 @@ install_mongo_express() {
 
     # Verify MongoDB connection with credentials
     print_step "Verifying MongoDB connection with provided credentials..."
-    if ! echo "db.adminCommand('ping')" | mongosh "mongodb://$mongo_user:$mongo_pass@localhost:27017/admin?authSource=admin" &>/dev/null; then
+    
+    # Use explicit flags for safety and capture output
+    if ! ERR_OUTPUT=$(mongosh --quiet --username "$mongo_user" --password "$mongo_pass" --authenticationDatabase admin --host localhost --port 27017 --eval "db.adminCommand('ping')" 2>&1); then
         print_error "Failed to connect to MongoDB with provided credentials!"
-        print_info "Please ensure credentials are correct."
+        print_info "Error details:"
+        echo -e "${RED}$ERR_OUTPUT${NC}"
+        print_info ""
         print_info "Troubleshooting:"
-        print_info "  1. Check MongoDB is running: systemctl status mongod"
-        print_info "  2. Verify user exists: mongosh > use admin > db.getUser('$mongo_user')"
-        print_info "  3. Check mongod.conf has: security.authorization: enabled"
+        print_info "  1. Check if username '$mongo_user' is correct."
+        print_info "  2. Check if password is correct."
+        print_info "  3. Verify user exists: mongosh -u $mongo_user -p ... --authenticationDatabase admin"
         return
     fi
     print_success "✅ MongoDB connection verified!"
