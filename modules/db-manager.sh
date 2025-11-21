@@ -1,7 +1,7 @@
 #!/bin/bash
 #######################################
 # Module: Database Manager
-# Quản lý PostgreSQL, MongoDB, MySQL, Redis
+# Quản lý MongoDB, MySQL, Redis
 #######################################
 
 source "$NDC_INSTALL_DIR/utils/colors.sh"
@@ -11,10 +11,10 @@ db_manager_menu() {
     while true; do
         print_header "QUẢN LÝ DATABASE"
         
-        echo -e " ${GREEN}1)${NC} PostgreSQL Manager"
-        echo -e " ${GREEN}2)${NC} MongoDB Manager"
-        echo -e " ${GREEN}3)${NC} MySQL/MariaDB Manager"
-        echo -e " ${GREEN}4)${NC} Redis Manager"
+        echo -e " ${GREEN}1)${NC} MongoDB Manager"
+        echo -e " ${GREEN}2)${NC} MySQL/MariaDB Manager"
+        echo -e " ${GREEN}3)${NC} Redis Manager"
+        echo -e " ${GREEN}4)${NC} Database Account Info"
         echo -e " ${GREEN}5)${NC} Backup all databases"
         echo -e " ${GREEN}6)${NC} Restore database"
         echo ""
@@ -25,10 +25,10 @@ db_manager_menu() {
         echo ""
         
         case $choice in
-            1) postgresql_menu ;;
-            2) mongodb_menu ;;
-            3) mysql_menu ;;
-            4) redis_menu ;;
+            1) mongodb_menu ;;
+            2) mysql_menu ;;
+            3) redis_menu ;;
+            4) show_db_credentials ;;
             5) backup_all_databases ;;
             6) restore_database ;;
             0) return ;;
@@ -37,109 +37,32 @@ db_manager_menu() {
     done
 }
 
-postgresql_menu() {
-    while true; do
-        print_header "POSTGRESQL MANAGER"
+show_db_credentials() {
+    print_header "DATABASE ACCOUNT INFO"
+    
+    if [ -f "$NDC_CONFIG_DIR/auth.conf" ]; then
+        source "$NDC_CONFIG_DIR/auth.conf"
         
-        echo -e " ${GREEN}1)${NC} List databases"
-        echo -e " ${GREEN}2)${NC} Create database"
-        echo -e " ${GREEN}3)${NC} Drop database"
-        echo -e " ${GREEN}4)${NC} Create user"
-        echo -e " ${GREEN}5)${NC} Backup database"
-        echo -e " ${GREEN}6)${NC} Restore database"
-        echo -e " ${GREEN}7)${NC} PostgreSQL status"
-        echo ""
-        echo -e " ${RED}0)${NC} Back"
+        echo -e "${CYAN}MongoDB Credentials:${NC}"
+        echo -e "  User: ${YELLOW}$MONGODB_USER${NC}"
+        echo -e "  Pass: ${YELLOW}$MONGODB_PASS${NC}"
         echo ""
         
-        read -p "$(echo -e "${CYAN}Enter your choice:${NC} ")" choice
+        echo -e "${CYAN}Mongo Express GUI:${NC}"
+        echo -e "  URL : ${YELLOW}http://$(get_public_ip):8081${NC}"
+        echo -e "  User: ${YELLOW}$MONGO_EXPRESS_USER${NC}"
+        echo -e "  Pass: ${YELLOW}$MONGO_EXPRESS_PASS${NC}"
         echo ""
-        
-        case $choice in
-            1) sudo -u postgres psql -c "\l"; press_any_key ;;
-            2) create_postgresql_db ;;
-            3) drop_postgresql_db ;;
-            4) create_postgresql_user ;;
-            5) backup_postgresql_db ;;
-            6) restore_postgresql_db ;;
-            7) systemctl status postgresql; press_any_key ;;
-            0) return ;;
-        esac
-    done
-}
-
-create_postgresql_db() {
-    read_input "Enter database name" "" dbname
-    read_input "Enter username" "" username
-    read_password "Enter password" password
-    
-    sudo -u postgres psql <<EOF
-CREATE DATABASE $dbname;
-CREATE USER $username WITH ENCRYPTED PASSWORD '$password';
-GRANT ALL PRIVILEGES ON DATABASE $dbname TO $username;
-EOF
-    
-    print_success "Database created: $dbname"
-    print_info "User: $username"
-    press_any_key
-}
-
-drop_postgresql_db() {
-    read_input "Enter database name to drop" "" dbname
-    
-    if confirm_action "Drop database $dbname? This cannot be undone!"; then
-        sudo -u postgres psql -c "DROP DATABASE $dbname;"
-        print_success "Database dropped"
-    fi
-    
-    press_any_key
-}
-
-create_postgresql_user() {
-    read_input "Enter username" "" username
-    read_password "Enter password" password
-    
-    sudo -u postgres psql -c "CREATE USER $username WITH ENCRYPTED PASSWORD '$password';"
-    print_success "User created: $username"
-    
-    press_any_key
-}
-
-backup_postgresql_db() {
-    read_input "Enter database name" "" dbname
-    local backup_file="$NDC_BACKUP_DIR/postgresql_${dbname}_$(date +%Y%m%d_%H%M%S).sql"
-    
-    mkdir -p "$NDC_BACKUP_DIR"
-    
-    print_step "Backing up $dbname..."
-    
-    if sudo -u postgres pg_dump "$dbname" > "$backup_file"; then
-        gzip "$backup_file"
-        print_success "Backup saved: ${backup_file}.gz"
     else
-        print_error "Backup failed"
+        print_warning "No credentials file found at $NDC_CONFIG_DIR/auth.conf"
     fi
     
-    press_any_key
-}
-
-restore_postgresql_db() {
-    read_input "Enter database name" "" dbname
-    read_input "Enter backup file path" "" backup_file
-    
-    if [ ! -f "$backup_file" ]; then
-        print_error "Backup file not found!"
-        press_any_key
-        return
-    fi
-    
-    if confirm_action "Restore $dbname from backup? Existing data will be replaced!"; then
-        if [[ "$backup_file" == *.gz ]]; then
-            gunzip -c "$backup_file" | sudo -u postgres psql "$dbname"
-        else
-            sudo -u postgres psql "$dbname" < "$backup_file"
-        fi
-        print_success "Database restored"
+    # Check for phpMyAdmin (if installed via other means, though not explicitly managed here yet)
+    if [ -d "/var/www/html/phpmyadmin" ] || [ -f "/etc/nginx/sites-enabled/phpmyadmin" ]; then
+        echo -e "${CYAN}phpMyAdmin:${NC}"
+        echo -e "  URL : ${YELLOW}http://$(get_public_ip)/phpmyadmin${NC}"
+        echo -e "  User: (Use MySQL credentials)"
+        echo ""
     fi
     
     press_any_key
@@ -390,12 +313,6 @@ backup_all_databases() {
     mkdir -p "$backup_dir"
     
     print_step "Backing up all databases..."
-    
-    # PostgreSQL
-    if command -v pg_dumpall >/dev/null; then
-        sudo -u postgres pg_dumpall > "$backup_dir/postgresql_all.sql"
-        gzip "$backup_dir/postgresql_all.sql"
-    fi
     
     # MongoDB
     if command -v mongodump >/dev/null; then

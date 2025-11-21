@@ -223,33 +223,6 @@ install_pm2() {
 }
 
 #######################################
-# Install PostgreSQL
-#######################################
-install_postgresql() {
-    print_step "Installing PostgreSQL..."
-    
-    if command -v psql >/dev/null 2>&1; then
-        print_warning "PostgreSQL already installed, skipping..."
-        return
-    fi
-    
-    case "$PKG_MANAGER" in
-        apt-get)
-            apt-get install -y -qq postgresql postgresql-contrib >/dev/null 2>&1
-            ;;
-        dnf)
-            dnf install -y -q postgresql-server postgresql-contrib >/dev/null 2>&1
-            postgresql-setup --initdb >/dev/null 2>&1
-            ;;
-    esac
-    
-    systemctl enable postgresql
-    systemctl start postgresql
-    
-    print_success "PostgreSQL installed"
-}
-
-#######################################
 # Install MongoDB
 #######################################
 install_mongodb() {
@@ -265,7 +238,7 @@ install_mongodb() {
             curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg
             echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
             apt-get update -qq
-            apt-get install -y -qq mongodb-org >/dev/null 2>&1
+            apt-get install -y -qq mongodb-org mongodb-mongosh >/dev/null 2>&1
             ;;
         dnf)
             cat > /etc/yum.repos.d/mongodb-org-7.0.repo <<EOF
@@ -276,14 +249,129 @@ gpgcheck=1
 enabled=1
 gpgkey=https://www.mongodb.org/static/pgp/server-7.0.asc
 EOF
-            dnf install -y -q mongodb-org >/dev/null 2>&1
+            dnf install -y -q mongodb-org mongodb-mongosh >/dev/null 2>&1
             ;;
     esac
     
     systemctl enable mongod
     systemctl start mongod
     
-    print_success "MongoDB installed"
+    # Wait for MongoDB to start
+    sleep 5
+    
+    # Secure MongoDB
+    print_step "Securing MongoDB..."
+    
+    # Generate passwords
+    MONGO_ADMIN_PASS=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9')
+    MONGO_EXPRESS_USER="admin"
+    MONGO_EXPRESS_PASS=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9')
+    
+    # Create admin user
+    mongosh --quiet --eval "
+      use admin;
+      db.createUser({
+        user: 'admin',
+        pwd: '$MONGO_ADMIN_PASS',
+        roles: [ { role: 'root', db: 'admin' } ]
+      });
+    " >/dev/null 2>&1
+    
+    # Enable auth
+    sed -i 's/^#security:/security:/' /etc/mongod.conf 2>/dev/null || echo "security:" >> /etc/mongod.conf
+    sed -i 's/^security:/security:\n  authorization: enabled/' /etc/mongod.conf
+    
+    # Fix bindIp if needed (ensure localhost)
+    sed -i 's/bindIp: .*/bindIp: 127.0.0.1/' /etc/mongod.conf
+    
+    systemctl restart mongod
+    sleep 5
+    
+    # Save credentials
+    mkdir -p "$NDC_CONFIG_DIR"
+    cat > "$NDC_CONFIG_DIR/auth.conf" <<EOF
+# Database Credentials
+MONGODB_USER=admin
+MONGODB_PASS=$MONGO_ADMIN_PASS
+MONGO_EXPRESS_USER=$MONGO_EXPRESS_USER
+MONGO_EXPRESS_PASS=$MONGO_EXPRESS_PASS
+EOF
+    chmod 600 "$NDC_CONFIG_DIR/auth.conf"
+    
+    print_success "MongoDB installed and secured"
+}
+
+#######################################
+# Install Mongo Express
+#######################################
+install_mongo_express() {
+    print_step "Installing Mongo Express..."
+    
+    # Load credentials
+    if [ -f "$NDC_CONFIG_DIR/auth.conf" ]; then
+        source "$NDC_CONFIG_DIR/auth.conf"
+    else
+        print_error "Credentials not found, skipping Mongo Express setup"
+        return
+    fi
+    
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    
+    # Install
+    npm install -g mongo-express >/dev/null 2>&1
+    
+    MONGO_EXPRESS_HOME="$(npm root -g)/mongo-express"
+    
+    if [ ! -d "$MONGO_EXPRESS_HOME" ]; then
+        print_error "Mongo Express install failed"
+        return
+    fi
+    
+    # Configure
+    cat > "$NDC_CONFIG_DIR/mongo-express.config.js" <<EOF
+module.exports = {
+  apps: [{
+    name: 'mongo-express',
+    script: 'app.js',
+    cwd: '$MONGO_EXPRESS_HOME',
+    instances: 1,
+    autorestart: true,
+    watch: false,
+    env: {
+      NODE_ENV: 'production',
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: 'true',
+      ME_CONFIG_MONGODB_SERVER: '127.0.0.1',
+      ME_CONFIG_MONGODB_PORT: '27017',
+      ME_CONFIG_MONGODB_AUTH_DATABASE: 'admin',
+      ME_CONFIG_MONGODB_AUTH_USERNAME: '$MONGODB_USER',
+      ME_CONFIG_MONGODB_AUTH_PASSWORD: '$MONGODB_PASS',
+      ME_CONFIG_BASICAUTH_USERNAME: '$MONGO_EXPRESS_USER',
+      ME_CONFIG_BASICAUTH_PASSWORD: '$MONGO_EXPRESS_PASS',
+      ME_CONFIG_SITE_HOST: '0.0.0.0',
+      ME_CONFIG_SITE_BASEURL: '/',
+      ME_CONFIG_SITE_COOKIE_SECRET: 'secret_$(date +%s)',
+      ME_CONFIG_SITE_SESSION_SECRET: 'secret_$(date +%s)',
+      VCAP_APP_HOST: '0.0.0.0',
+      PORT: '8081'
+    }
+  }]
+};
+EOF
+
+    # Start
+    pm2 start "$NDC_CONFIG_DIR/mongo-express.config.js" >/dev/null 2>&1
+    pm2 save >/dev/null 2>&1
+    
+    # Open firewall port 8081
+    if command -v ufw >/dev/null; then
+        ufw allow 8081/tcp >/dev/null 2>&1
+    elif command -v firewall-cmd >/dev/null; then
+        firewall-cmd --permanent --add-port=8081/tcp >/dev/null 2>&1
+        firewall-cmd --reload >/dev/null 2>&1
+    fi
+    
+    print_success "Mongo Express installed (Port 8081)"
 }
 
 #######################################
@@ -502,14 +590,28 @@ show_completion() {
     echo -e "  ${GREEN}✓${NC} Nginx web server"
     echo -e "  ${GREEN}✓${NC} Node.js + NVM"
     echo -e "  ${GREEN}✓${NC} PM2 process manager"
-    echo -e "  ${GREEN}✓${NC} PostgreSQL database"
-    echo -e "  ${GREEN}✓${NC} MongoDB database"
+    echo -e "  ${GREEN}✓${NC} MongoDB + Mongo Express"
     echo -e "  ${GREEN}✓${NC} MariaDB database"
     echo -e "  ${GREEN}✓${NC} Redis cache"
     echo -e "  ${GREEN}✓${NC} Let's Encrypt SSL"
     echo -e "  ${GREEN}✓${NC} Firewall (UFW/Firewalld)"
     echo -e "  ${GREEN}✓${NC} Fail2ban protection"
     echo ""
+    
+    if [ -f "$NDC_CONFIG_DIR/auth.conf" ]; then
+        source "$NDC_CONFIG_DIR/auth.conf"
+        echo -e "${CYAN}Database Credentials:${NC}"
+        echo -e "  ${BOLD}MongoDB Admin:${NC}"
+        echo -e "    User: ${YELLOW}$MONGODB_USER${NC}"
+        echo -e "    Pass: ${YELLOW}$MONGODB_PASS${NC}"
+        echo -e ""
+        echo -e "  ${BOLD}Mongo Express GUI:${NC}"
+        echo -e "    URL : ${YELLOW}http://YOUR_IP:8081${NC}"
+        echo -e "    User: ${YELLOW}$MONGO_EXPRESS_USER${NC}"
+        echo -e "    Pass: ${YELLOW}$MONGO_EXPRESS_PASS${NC}"
+        echo ""
+    fi
+
     echo -e "${CYAN}Quick Start:${NC}"
     echo -e "  Run: ${YELLOW}ndc${NC} or ${YELLOW}ndc-ols${NC}"
     echo ""
@@ -539,7 +641,7 @@ main() {
     echo ""
     echo -e "${YELLOW}This will install:${NC}"
     echo "  • Nginx, Node.js, PM2"
-    echo "  • PostgreSQL, MongoDB, MariaDB, Redis"
+    echo "  • MongoDB, Mongo Express, MariaDB, Redis"
     echo "  • SSL (Let's Encrypt), Firewall, Fail2ban"
     echo ""
     
@@ -572,8 +674,8 @@ main() {
     install_nginx
     install_node
     install_pm2
-    install_postgresql
     install_mongodb
+    install_mongo_express
     install_mysql
     install_redis
     install_certbot
