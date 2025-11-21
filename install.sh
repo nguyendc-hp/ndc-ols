@@ -714,21 +714,28 @@ install_mysql() {
         
         # Stop recovery mode
         print_info "Stopping safe mode..."
+        # Kill the specific process we started
         kill $PID 2>/dev/null
-        wait $PID 2>/dev/null
+        
+        # Give it a moment to die gracefully
+        sleep 3
+        
+        # Aggressively kill any remaining mysql processes to ensure clean slate
         if command -v pkill >/dev/null; then
+            pkill -f mysqld_safe 2>/dev/null || true
             pkill -f mariadbd 2>/dev/null || true
             pkill -f mysqld 2>/dev/null || true
         fi
         
-        # Force kill if still running after 5 seconds
-        sleep 5
-        if pgrep -f "mysqld_safe" >/dev/null || pgrep -f "mariadbd" >/dev/null; then
-             print_warning "Force killing stuck MariaDB processes..."
+        # Force kill if they are stubborn
+        if pgrep -f "mariadbd" >/dev/null || pgrep -f "mysqld" >/dev/null; then
+             pkill -9 -f mysqld_safe 2>/dev/null || true
              pkill -9 -f mariadbd 2>/dev/null || true
              pkill -9 -f mysqld 2>/dev/null || true
-             rm -f /var/run/mysqld/mysqld.sock
         fi
+        
+        # Clean up lock file
+        rm -f /var/run/mysqld/mysqld.sock
         
         # Restart service
         print_info "Restarting MariaDB service..."
