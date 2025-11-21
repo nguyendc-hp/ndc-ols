@@ -692,7 +692,15 @@ install_mysql() {
             pkill -f mariadbd 2>/dev/null || true
             pkill -f mysqld 2>/dev/null || true
         fi
+        
+        # Force kill if still running after 5 seconds
         sleep 5
+        if pgrep -f "mysqld_safe" >/dev/null || pgrep -f "mariadbd" >/dev/null; then
+             print_warning "Force killing stuck MariaDB processes..."
+             pkill -9 -f mariadbd 2>/dev/null || true
+             pkill -9 -f mysqld 2>/dev/null || true
+             rm -f /var/run/mysqld/mysqld.sock
+        fi
         
         # Restart service
         print_info "Restarting MariaDB service..."
