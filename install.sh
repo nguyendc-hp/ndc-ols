@@ -129,9 +129,9 @@ wait_for_apt() {
     
     local i=0
     local stale_lock_count=0
-    local max_wait=600  # 10 minutes (increased from 5)
+    local max_wait=180  # 3 minutes (more aggressive)
     local last_pid=""
-    local pid_change_count=0
+    local kill_attempted=0
     
     print_info "Checking if package manager is busy..."
     
@@ -140,10 +140,10 @@ wait_for_apt() {
         local current_pid=""
         
         # Check common package manager processes
-        if pgrep -x "apt" >/dev/null 2>&1; then running_proc="apt"; current_pid=$(pgrep -x apt); fi
-        if pgrep -x "apt-get" >/dev/null 2>&1; then running_proc="apt-get"; current_pid=$(pgrep -x apt-get); fi
-        if pgrep -x "dpkg" >/dev/null 2>&1; then running_proc="dpkg"; current_pid=$(pgrep -x dpkg); fi
-        if pgrep -f "unattended-upgr" >/dev/null 2>&1; then running_proc="unattended-upgrades"; current_pid=$(pgrep -f "unattended-upgr"); fi
+        if pgrep -x "apt" >/dev/null 2>&1; then running_proc="apt"; current_pid=$(pgrep -x apt 2>/dev/null | head -1); fi
+        if pgrep -x "apt-get" >/dev/null 2>&1; then running_proc="apt-get"; current_pid=$(pgrep -x apt-get 2>/dev/null | head -1); fi
+        if pgrep -x "dpkg" >/dev/null 2>&1; then running_proc="dpkg"; current_pid=$(pgrep -x dpkg 2>/dev/null | head -1); fi
+        if pgrep -f "unattended-upgr" >/dev/null 2>&1; then running_proc="unattended-upgrades"; current_pid=$(pgrep -f "unattended-upgr" 2>/dev/null | head -1); fi
         
         local lock_exists=0
         [ -f /var/lib/dpkg/lock-frontend ] && lock_exists=1
@@ -157,34 +157,30 @@ wait_for_apt() {
         fi
         
         if [ -n "$running_proc" ]; then
-            # Track if process PID changed (i.e., completed and new one started)
-            if [ "$last_pid" != "$current_pid" ] && [ -n "$last_pid" ]; then
-                pid_change_count=$((pid_change_count+1))
-            fi
-            last_pid="$current_pid"
-            
             if [ $((i % 30)) -eq 0 ]; then
                 print_info "Process '$running_proc' is still running. Waiting... (${i}s)"
             fi
             
-            # If unattended-upgrades appears stuck (same PID for too long), try to stop it
-            if [ "$running_proc" = "unattended-upgrades" ] && [ $i -gt 120 ]; then
-                print_warning "unattended-upgrades running too long. Attempting to stop..."
+            # After 60 seconds, try to stop unattended-upgrades
+            if [ "$running_proc" = "unattended-upgrades" ] && [ $i -ge 60 ] && [ $i -lt 90 ] && [ $kill_attempted -eq 0 ]; then
+                print_warning "unattended-upgrades running >60s. Attempting to stop..."
+                kill -TERM "$current_pid" 2>/dev/null || true
                 systemctl stop unattended-upgrades 2>/dev/null || true
-                sleep 5
+                kill_attempted=1
+                sleep 3
             fi
             
             stale_lock_count=0
         else
             # Lock exists but no process found
             stale_lock_count=$((stale_lock_count+1))
-            if [ $stale_lock_count -gt 5 ]; then
+            if [ $stale_lock_count -gt 3 ]; then
                 print_warning "Stale lock detected. Cleaning up..."
                 rm -f /var/lib/dpkg/lock-frontend 2>/dev/null || true
                 rm -f /var/lib/dpkg/lock 2>/dev/null || true
                 rm -f /var/lib/apt/lists/lock 2>/dev/null || true
                 dpkg --configure -a >/dev/null 2>&1 || true
-                sleep 2
+                sleep 1
                 break
             fi
         fi
@@ -192,13 +188,16 @@ wait_for_apt() {
         sleep 2
         i=$((i+2))
         
+        # Force kill after 180 seconds (3 minutes)
         if [ $i -gt $max_wait ]; then
-            print_warning "Timeout waiting for package manager (${max_wait}s). Force clearing locks..."
-            # Force clear all locks
-            killall -9 unattended-upgrades 2>/dev/null || true
-            killall -9 apt-get 2>/dev/null || true
-            killall -9 dpkg 2>/dev/null || true
-            sleep 3
+            print_error "Package manager timeout (${max_wait}s). Force killing..."
+            # Force kill all offending processes
+            pkill -9 -f "unattended-upgrades" 2>/dev/null || true
+            pkill -9 -f "apt-get" 2>/dev/null || true
+            pkill -9 -f "apt " 2>/dev/null || true
+            pkill -9 -f "dpkg" 2>/dev/null || true
+            sleep 2
+            # Clear all locks
             rm -f /var/lib/dpkg/lock* 2>/dev/null || true
             rm -f /var/lib/apt/lists/lock 2>/dev/null || true
             dpkg --configure -a >/dev/null 2>&1 || true
