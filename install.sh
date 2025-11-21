@@ -106,28 +106,55 @@ print_step() { echo -e "${BLUE}[→]${NC} ${BOLD}$1${NC}"; }
 wait_for_apt() {
     if [ "$PKG_MANAGER" = "apt-get" ]; then
         local i=0
-        # Check for running apt/dpkg processes
-        while pgrep -x "apt" >/dev/null || pgrep -x "apt-get" >/dev/null || pgrep -x "dpkg" >/dev/null || \
-              [ -f /var/lib/dpkg/lock-frontend ] || [ -f /var/lib/dpkg/lock ]; do
+        local stale_lock_count=0
+        
+        while true; do
+            local running_proc=""
+            # Check common package manager processes
+            if pgrep -x "apt" >/dev/null; then running_proc="apt"; fi
+            if pgrep -x "apt-get" >/dev/null; then running_proc="apt-get"; fi
+            if pgrep -x "dpkg" >/dev/null; then running_proc="dpkg"; fi
+            if pgrep -f "unattended-upgr" >/dev/null; then running_proc="unattended-upgrades"; fi
             
-            # Double check if lock file exists but no process (stale lock)
-            if [ -f /var/lib/dpkg/lock-frontend ] && ! pgrep -x "apt" >/dev/null && ! pgrep -x "apt-get" >/dev/null && ! pgrep -x "dpkg" >/dev/null; then
-                 # If no process is running but lock exists, it might be safe to proceed, 
-                 # but let's wait a bit to be sure it's not a race condition
-                 sleep 2
-                 # If it persists, we might need to break, but for now let's assume active process
+            local lock_exists=0
+            if [ -f /var/lib/dpkg/lock-frontend ] || [ -f /var/lib/dpkg/lock ] || [ -f /var/lib/apt/lists/lock ]; then
+                lock_exists=1
             fi
-
+            
+            # If no process and no lock, we are good
+            if [ -z "$running_proc" ] && [ $lock_exists -eq 0 ]; then
+                break
+            fi
+            
             if [ $i -eq 0 ]; then
-                print_info "Waiting for other apt/dpkg processes to finish..."
+                print_info "Checking for other package manager processes..."
+            fi
+            
+            if [ -n "$running_proc" ]; then
+                if [ $((i % 10)) -eq 0 ]; then
+                    print_info "Process '$running_proc' is running (System Update). Waiting..."
+                fi
+                stale_lock_count=0
+            else
+                # Lock exists but no process found
+                stale_lock_count=$((stale_lock_count+1))
+                if [ $stale_lock_count -gt 5 ]; then # 10 seconds
+                    print_warning "Stale lock detected (no process running). Removing locks..."
+                    rm -f /var/lib/dpkg/lock-frontend
+                    rm -f /var/lib/dpkg/lock
+                    rm -f /var/lib/apt/lists/lock
+                    # Fix interrupted installs if any
+                    dpkg --configure -a >/dev/null 2>&1 || true
+                    print_success "Locks removed."
+                    break
+                fi
             fi
             
             sleep 2
             i=$((i+1))
             
-            # Timeout after 5 minutes (150 * 2s = 300s)
-            if [ $i -gt 150 ]; then
-                 print_warning "Timed out waiting for apt lock. Proceeding anyway..."
+            if [ $i -gt 300 ]; then # 10 minutes max
+                 print_warning "Timed out waiting. Proceeding..."
                  break
             fi
         done
@@ -222,7 +249,7 @@ install_dependencies() {
             apt-get install -y curl wget git tar gzip unzip software-properties-common \
                 build-essential libssl-dev ca-certificates gnupg lsb-release \
                 netcat net-tools htop iotop screen vim nano ufw fail2ban \
-                python3-pip python3-venv libpq-dev
+                python3-pip python3-venv libpq-dev psmisc
             ;;
         dnf)
             dnf install -y curl wget git tar gzip unzip \
