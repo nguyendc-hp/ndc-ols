@@ -380,47 +380,74 @@ EOF
 install_mysql() {
     print_step "Installing MariaDB..."
     
+    # Check if already installed
     if command -v mysql >/dev/null 2>&1; then
-        print_warning "MySQL/MariaDB already installed, skipping..."
-        return
+        print_warning "MySQL/MariaDB already installed."
+        # If installed, we still want to ensure it's running and try to secure it if possible,
+        # or at least not fail if we can't.
+    else
+        case "$PKG_MANAGER" in
+            apt-get)
+                apt-get install -y -qq mariadb-server mariadb-client >/dev/null 2>&1
+                ;;
+            dnf)
+                dnf install -y -q mariadb-server mariadb >/dev/null 2>&1
+                ;;
+        esac
     fi
-    
-    case "$PKG_MANAGER" in
-        apt-get)
-            apt-get install -y -qq mariadb-server mariadb-client >/dev/null 2>&1
-            ;;
-        dnf)
-            dnf install -y -q mariadb-server mariadb >/dev/null 2>&1
-            ;;
-    esac
     
     systemctl enable mariadb
     systemctl start mariadb
+    
+    # Wait for MariaDB to be ready
+    print_info "Waiting for MariaDB to start..."
+    local max_retries=30
+    local count=0
+    while [ $count -lt $max_retries ]; do
+        if mysql -e "SELECT 1" >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+        count=$((count+1))
+    done
     
     # Secure MariaDB
     print_step "Securing MariaDB..."
     
     MYSQL_ROOT_PASS=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9')
     
-    # Set root password and secure installation
-    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASS';"
-    mysql -e "DELETE FROM mysql.user WHERE User='';"
-    mysql -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');"
-    mysql -e "DROP DATABASE IF EXISTS test;"
-    mysql -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';"
-    mysql -e "FLUSH PRIVILEGES;"
+    # Try to set root password. 
+    # On fresh install, root has no password (unix_socket).
+    # If this fails, it might be because a password is already set.
     
-    # Save credentials
-    # Append to auth.conf (create if not exists, though mongodb should have created it)
-    if [ ! -f "$NDC_CONFIG_DIR/auth.conf" ]; then
-        mkdir -p "$NDC_CONFIG_DIR"
-        touch "$NDC_CONFIG_DIR/auth.conf"
-        chmod 600 "$NDC_CONFIG_DIR/auth.conf"
+    if mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASS';" 2>/dev/null; then
+        print_success "Root password set successfully."
+        
+        # Perform other security measures
+        mysql -u root -p"$MYSQL_ROOT_PASS" -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null || true
+        mysql -u root -p"$MYSQL_ROOT_PASS" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null || true
+        mysql -u root -p"$MYSQL_ROOT_PASS" -e "DROP DATABASE IF EXISTS test;" 2>/dev/null || true
+        mysql -u root -p"$MYSQL_ROOT_PASS" -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" 2>/dev/null || true
+        mysql -u root -p"$MYSQL_ROOT_PASS" -e "FLUSH PRIVILEGES;" 2>/dev/null || true
+        
+        # Save credentials
+        if [ ! -f "$NDC_CONFIG_DIR/auth.conf" ]; then
+            mkdir -p "$NDC_CONFIG_DIR"
+            touch "$NDC_CONFIG_DIR/auth.conf"
+            chmod 600 "$NDC_CONFIG_DIR/auth.conf"
+        fi
+        
+        # Remove old entry if exists
+        sed -i '/MYSQL_ROOT_PASS=/d' "$NDC_CONFIG_DIR/auth.conf"
+        echo "MYSQL_ROOT_PASS=$MYSQL_ROOT_PASS" >> "$NDC_CONFIG_DIR/auth.conf"
+        
+        print_success "MariaDB secured"
+        
+    else
+        print_warning "Could not set MariaDB root password (maybe already set?)."
+        print_info "Skipping security configuration to avoid errors."
+        # We don't exit here, just continue.
     fi
-    
-    echo "MYSQL_ROOT_PASS=$MYSQL_ROOT_PASS" >> "$NDC_CONFIG_DIR/auth.conf"
-    
-    print_success "MariaDB installed and secured"
 }
 
 #######################################
@@ -465,21 +492,22 @@ install_phpmyadmin() {
     print_step "Installing PHP dependencies..."
     case "$PKG_MANAGER" in
         apt-get)
+            # Ensure non-interactive for phpmyadmin
+            export DEBIAN_FRONTEND=noninteractive
+            
             apt-get install -y -qq php-fpm php-mysql php-mbstring php-zip php-gd php-json php-curl php-xml >/dev/null 2>&1
             
-            # Pre-configure debconf for phpmyadmin
-            echo "phpmyadmin phpmyadmin/dbconfig-install boolean true" | debconf-set-selections
-            echo "phpmyadmin phpmyadmin/app-password-confirm password " | debconf-set-selections
-            echo "phpmyadmin phpmyadmin/mysql/admin-pass password " | debconf-set-selections
-            echo "phpmyadmin phpmyadmin/mysql/app-pass password " | debconf-set-selections
+            # Pre-configure debconf for phpmyadmin to avoid prompts and errors
+            # We set dbconfig-install to false because we already have a DB and we don't want it to try to create one with random passwords we don't know
+            # Or we can let it, but it might fail if root pass is set.
+            # Safest is to NOT let it configure the DB automatically, we just want the files.
+            echo "phpmyadmin phpmyadmin/dbconfig-install boolean false" | debconf-set-selections
             echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect " | debconf-set-selections
             
             apt-get install -y -qq phpmyadmin >/dev/null 2>&1
             ;;
         dnf)
             dnf install -y -q php php-fpm php-mysqlnd php-mbstring php-zip php-gd php-json php-xml >/dev/null 2>&1
-            # On RHEL/CentOS, phpMyAdmin is usually in EPEL, assume EPEL is enabled or install from source/remirepo
-            # For simplicity in this script, we'll try dnf install phpmyadmin if available, else skip or warn
             if dnf list phpmyadmin >/dev/null 2>&1; then
                 dnf install -y -q phpmyadmin >/dev/null 2>&1
             else
@@ -495,12 +523,7 @@ install_phpmyadmin() {
     # Create a symlink to web root
     ln -sf /usr/share/phpmyadmin /var/www/html/phpmyadmin
     
-    # We need to ensure Nginx handles PHP files. 
-    # This usually requires a specific location block in the default config or a dedicated config.
-    # For now, we'll assume the user will access it via a specific port or path that we need to set up.
-    # A simple way is to add a snippet to the default site or create a new conf.
-    
-    # Let's create a dedicated phpmyadmin config
+    # Create config
     cat > /etc/nginx/conf.d/phpmyadmin.conf <<EOF
 server {
     listen 8080;

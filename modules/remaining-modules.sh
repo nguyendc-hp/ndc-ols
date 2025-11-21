@@ -171,13 +171,11 @@ install_phpmyadmin() {
     # Install PHP and extensions first
     print_step "Installing PHP dependencies..."
     if command_exists apt-get; then
+        export DEBIAN_FRONTEND=noninteractive
         apt-get install -y -qq php-fpm php-mysql php-mbstring php-zip php-gd php-json php-curl php-xml >/dev/null 2>&1
         
         # Pre-configure debconf for phpmyadmin
-        echo "phpmyadmin phpmyadmin/dbconfig-install boolean true" | debconf-set-selections
-        echo "phpmyadmin phpmyadmin/app-password-confirm password " | debconf-set-selections
-        echo "phpmyadmin phpmyadmin/mysql/admin-pass password " | debconf-set-selections
-        echo "phpmyadmin phpmyadmin/mysql/app-pass password " | debconf-set-selections
+        echo "phpmyadmin phpmyadmin/dbconfig-install boolean false" | debconf-set-selections
         echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect " | debconf-set-selections
         
         apt-get install -y -qq phpmyadmin >/dev/null 2>&1
