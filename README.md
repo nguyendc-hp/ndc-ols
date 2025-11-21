@@ -299,9 +299,9 @@ ndc-ols
 - Changelog
 
 #### 2️⃣4️⃣ Database Admin GUI
-- pgAdmin (PostgreSQL)
-- Mongo Express (MongoDB)
-- phpMyAdmin (MySQL)
+- pgAdmin (PostgreSQL) - Port 5050
+- Mongo Express (MongoDB) - Port 8081
+- phpMyAdmin (MySQL) - Port 8080
 - SSL protection
 
 #### 2️⃣5️⃣ Support Request
@@ -372,9 +372,9 @@ ndc-ols
 - **Grafana + Prometheus** - Advanced metrics (optional)
 
 ### GUI Tools
-- **pgAdmin** - PostgreSQL admin
-- **Mongo Express** - MongoDB admin
-- **phpMyAdmin** - MySQL/MariaDB admin
+- **pgAdmin** - PostgreSQL admin (Port 5050)
+- **Mongo Express** - MongoDB admin (Port 8081)
+- **phpMyAdmin** - MySQL/MariaDB admin (Port 8080)
 - **File Browser** - Web file manager
 
 ---

@@ -183,12 +183,14 @@ install_dependencies() {
         apt-get)
             apt-get install -y curl wget git tar gzip unzip software-properties-common \
                 build-essential libssl-dev ca-certificates gnupg lsb-release \
-                netcat net-tools htop iotop screen vim nano ufw fail2ban
+                netcat net-tools htop iotop screen vim nano ufw fail2ban \
+                python3-pip python3-venv libpq-dev
             ;;
         dnf)
             dnf install -y curl wget git tar gzip unzip \
                 gcc gcc-c++ make openssl-devel ca-certificates \
-                nc net-tools htop iotop screen vim nano firewalld fail2ban
+                nc net-tools htop iotop screen vim nano firewalld fail2ban \
+                python3-pip python3-virtualenv libpq-devel python3-devel
             ;;
     esac
     
@@ -760,6 +762,185 @@ EOF
 }
 
 #######################################
+# Install PostgreSQL
+#######################################
+install_postgresql() {
+    print_step "Installing PostgreSQL..."
+    
+    if command -v psql >/dev/null 2>&1; then
+        print_warning "PostgreSQL already installed, skipping..."
+        return
+    fi
+    
+    case "$PKG_MANAGER" in
+        apt-get)
+            apt-get install -y postgresql postgresql-contrib
+            ;;
+        dnf)
+            dnf install -y postgresql-server postgresql-contrib
+            postgresql-setup --initdb
+            ;;
+    esac
+    
+    systemctl enable postgresql
+    systemctl start postgresql
+    
+    # Wait for Postgres
+    sleep 5
+    
+    # Secure PostgreSQL
+    print_step "Securing PostgreSQL..."
+    
+    PG_PASS=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9')
+    
+    # Create admin user
+    # Try to create, if exists alter
+    sudo -u postgres psql -c "CREATE USER admin WITH PASSWORD '$PG_PASS';" >/dev/null 2>&1 || \
+    sudo -u postgres psql -c "ALTER USER admin WITH PASSWORD '$PG_PASS';" >/dev/null 2>&1
+    
+    sudo -u postgres psql -c "ALTER USER admin WITH SUPERUSER;" >/dev/null 2>&1
+    
+    # Save credentials
+    if [ ! -f "$NDC_CONFIG_DIR/auth.conf" ]; then
+        mkdir -p "$NDC_CONFIG_DIR"
+        touch "$NDC_CONFIG_DIR/auth.conf"
+        chmod 600 "$NDC_CONFIG_DIR/auth.conf"
+    fi
+    
+    # Remove old entry if exists and append new
+    sed -i '/PG_PASS=/d' "$NDC_CONFIG_DIR/auth.conf"
+    echo "PG_PASS=$PG_PASS" >> "$NDC_CONFIG_DIR/auth.conf"
+    
+    print_success "PostgreSQL installed and secured"
+}
+
+#######################################
+# Install pgAdmin 4
+#######################################
+install_pgadmin() {
+    print_step "Installing pgAdmin 4..."
+    
+    # Load credentials
+    if [ -f "$NDC_CONFIG_DIR/auth.conf" ]; then
+        source "$NDC_CONFIG_DIR/auth.conf"
+    else
+        print_error "Credentials not found, skipping pgAdmin setup"
+        return
+    fi
+    
+    PGADMIN_DIR="$NDC_INSTALL_DIR/pgadmin"
+    mkdir -p "$PGADMIN_DIR"
+    
+    print_info "Setting up Python virtual environment..."
+    cd "$PGADMIN_DIR"
+    
+    # Create venv
+    python3 -m venv venv
+    source venv/bin/activate
+    
+    # Install pgadmin4
+    print_info "Installing pgAdmin4 package (this may take a while)..."
+    pip install --upgrade pip >/dev/null 2>&1
+    pip install pgadmin4 gunicorn >/dev/null 2>&1
+    
+    # Find package dir
+    PGADMIN_PKG_DIR=$(find "$PGADMIN_DIR/venv" -name "pgadmin4" -type d | grep "site-packages" | head -n 1)
+    
+    if [ -z "$PGADMIN_PKG_DIR" ]; then
+        print_error "Could not find pgadmin4 package directory"
+        return
+    fi
+    
+    # Generate credentials
+    PGADMIN_EMAIL="admin@ndc.local"
+    PGADMIN_PASS=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9')
+    
+    # Configure
+    mkdir -p /var/lib/pgadmin
+    mkdir -p /var/log/pgadmin
+    chown -R root:root /var/lib/pgadmin /var/log/pgadmin
+    
+    # Config local
+    cat > "$PGADMIN_PKG_DIR/config_local.py" <<EOF
+import os
+DATA_DIR = os.path.realpath(os.path.expanduser(u'/var/lib/pgadmin'))
+LOG_FILE = os.path.join(os.path.realpath(os.path.expanduser(u'/var/log/pgadmin')), 'pgadmin4.log')
+SQLITE_PATH = os.path.join(DATA_DIR, 'pgadmin4.db')
+SESSION_DB_PATH = os.path.join(DATA_DIR, 'sessions')
+STORAGE_DIR = os.path.join(DATA_DIR, 'storage')
+SERVER_MODE = True
+EOF
+
+    # Initialize DB
+    print_info "Initializing pgAdmin database..."
+    export PGADMIN_SETUP_EMAIL="$PGADMIN_EMAIL"
+    export PGADMIN_SETUP_PASSWORD="$PGADMIN_PASS"
+    
+    # Run setup
+    if [ -f "$PGADMIN_PKG_DIR/setup.py" ]; then
+        python "$PGADMIN_PKG_DIR/setup.py" >/dev/null 2>&1
+    else
+        print_warning "setup.py not found, trying 'flask db upgrade'..."
+    fi
+    
+    # PM2 Config (Gunicorn binds to 5051, Nginx proxies 5050 -> 5051)
+    cat > "$NDC_CONFIG_DIR/pgadmin.config.js" <<EOF
+module.exports = {
+  apps: [{
+    name: 'pgadmin',
+    script: '$PGADMIN_DIR/venv/bin/gunicorn',
+    args: '--bind 127.0.0.1:5051 --workers=1 --threads=25 --chdir $PGADMIN_PKG_DIR pgadmin4:app',
+    interpreter: 'none',
+    env: {
+      PGADMIN_SETUP_EMAIL: '$PGADMIN_EMAIL',
+      PGADMIN_SETUP_PASSWORD: '$PGADMIN_PASS'
+    }
+  }]
+};
+EOF
+
+    # Start PM2
+    pm2 delete pgadmin >/dev/null 2>&1 || true
+    pm2 start "$NDC_CONFIG_DIR/pgadmin.config.js"
+    pm2 save
+    
+    # Nginx Config
+    print_info "Configuring Nginx for pgAdmin..."
+    cat > /etc/nginx/conf.d/pgadmin.conf <<EOF
+server {
+    listen 5050;
+    server_name _;
+
+    location / {
+        proxy_pass http://127.0.0.1:5051;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Script-Name /;
+    }
+}
+EOF
+
+    # Open port 5050
+    if command -v ufw >/dev/null; then
+        ufw allow 5050/tcp >/dev/null 2>&1
+    elif command -v firewall-cmd >/dev/null; then
+        firewall-cmd --permanent --add-port=5050/tcp >/dev/null 2>&1
+        firewall-cmd --reload >/dev/null 2>&1
+    fi
+    
+    systemctl restart nginx
+    
+    # Save creds
+    sed -i '/PGADMIN_EMAIL=/d' "$NDC_CONFIG_DIR/auth.conf"
+    sed -i '/PGADMIN_PASS=/d' "$NDC_CONFIG_DIR/auth.conf"
+    echo "PGADMIN_EMAIL=$PGADMIN_EMAIL" >> "$NDC_CONFIG_DIR/auth.conf"
+    echo "PGADMIN_PASS=$PGADMIN_PASS" >> "$NDC_CONFIG_DIR/auth.conf"
+    
+    print_success "pgAdmin 4 installed (Port 5050)"
+}
+
+#######################################
 # Install Certbot (Let's Encrypt)
 #######################################
 install_certbot() {
@@ -927,6 +1108,7 @@ show_completion() {
     echo -e "  ${GREEN}✓${NC} PM2 process manager"
     echo -e "  ${GREEN}✓${NC} MongoDB + Mongo Express"
     echo -e "  ${GREEN}✓${NC} MariaDB + phpMyAdmin"
+    echo -e "  ${GREEN}✓${NC} PostgreSQL + pgAdmin 4"
     echo -e "  ${GREEN}✓${NC} Redis cache"
     echo -e "  ${GREEN}✓${NC} Let's Encrypt SSL"
     echo -e "  ${GREEN}✓${NC} Firewall (UFW/Firewalld)"
@@ -949,6 +1131,15 @@ show_completion() {
         echo -e "    URL : ${YELLOW}http://$SERVER_IP:8080${NC}"
         echo -e "    User: ${YELLOW}root${NC}"
         echo -e "    Pass: ${YELLOW}$MYSQL_ROOT_PASS${NC}"
+        echo ""
+        echo -e "  ${BOLD}PostgreSQL Admin:${NC}"
+        echo -e "    User: ${YELLOW}admin${NC}"
+        echo -e "    Pass: ${YELLOW}$PG_PASS${NC}"
+        echo -e ""
+        echo -e "  ${BOLD}pgAdmin 4 GUI:${NC}"
+        echo -e "    URL : ${YELLOW}http://$SERVER_IP:5050${NC}"
+        echo -e "    User: ${YELLOW}$PGADMIN_EMAIL${NC}"
+        echo -e "    Pass: ${YELLOW}$PGADMIN_PASS${NC}"
         echo ""
     fi
 
@@ -982,6 +1173,7 @@ main() {
     echo -e "${YELLOW}This will install:${NC}"
     echo "  • Nginx, Node.js, PM2"
     echo "  • MongoDB, Mongo Express, MariaDB, phpMyAdmin, Redis"
+    echo "  • PostgreSQL, pgAdmin 4"
     echo "  • SSL (Let's Encrypt), Firewall, Fail2ban"
     echo ""
     
@@ -1019,6 +1211,8 @@ main() {
     install_mysql
     install_redis
     install_phpmyadmin
+    install_postgresql
+    install_pgadmin
     install_certbot
     setup_firewall
     setup_fail2ban
