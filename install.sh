@@ -101,6 +101,40 @@ print_warning() { echo -e "${YELLOW}[!]${NC} ${YELLOW}$1${NC}"; }
 print_step() { echo -e "${BLUE}[→]${NC} ${BOLD}$1${NC}"; }
 
 #######################################
+# Wait for APT/DPKG Lock
+#######################################
+wait_for_apt() {
+    if [ "$PKG_MANAGER" = "apt-get" ]; then
+        local i=0
+        # Check for running apt/dpkg processes
+        while pgrep -x "apt" >/dev/null || pgrep -x "apt-get" >/dev/null || pgrep -x "dpkg" >/dev/null || \
+              [ -f /var/lib/dpkg/lock-frontend ] || [ -f /var/lib/dpkg/lock ]; do
+            
+            # Double check if lock file exists but no process (stale lock)
+            if [ -f /var/lib/dpkg/lock-frontend ] && ! pgrep -x "apt" >/dev/null && ! pgrep -x "apt-get" >/dev/null && ! pgrep -x "dpkg" >/dev/null; then
+                 # If no process is running but lock exists, it might be safe to proceed, 
+                 # but let's wait a bit to be sure it's not a race condition
+                 sleep 2
+                 # If it persists, we might need to break, but for now let's assume active process
+            fi
+
+            if [ $i -eq 0 ]; then
+                print_info "Waiting for other apt/dpkg processes to finish..."
+            fi
+            
+            sleep 2
+            i=$((i+1))
+            
+            # Timeout after 5 minutes (150 * 2s = 300s)
+            if [ $i -gt 150 ]; then
+                 print_warning "Timed out waiting for apt lock. Proceeding anyway..."
+                 break
+            fi
+        done
+    fi
+}
+
+#######################################
 # Check root
 #######################################
 check_root() {
@@ -160,6 +194,8 @@ detect_os() {
 update_system() {
     print_step "Updating system packages..."
     
+    wait_for_apt
+    
     case "$PKG_MANAGER" in
         apt-get)
             apt-get update
@@ -178,6 +214,8 @@ update_system() {
 #######################################
 install_dependencies() {
     print_step "Installing dependencies..."
+    
+    wait_for_apt
     
     case "$PKG_MANAGER" in
         apt-get)
@@ -279,6 +317,8 @@ install_mongodb() {
         print_warning "MongoDB already installed, skipping..."
         return
     fi
+    
+    wait_for_apt
     
     case "$PKG_MANAGER" in
         apt-get)
@@ -523,6 +563,7 @@ install_mysql() {
         # If installed, we still want to ensure it's running and try to secure it if possible,
         # or at least not fail if we can't.
     else
+        wait_for_apt
         case "$PKG_MANAGER" in
             apt-get)
                 apt-get install -y mariadb-server mariadb-client
@@ -667,6 +708,8 @@ install_redis() {
         return
     fi
     
+    wait_for_apt
+    
     case "$PKG_MANAGER" in
         apt-get)
             apt-get install -y redis-server
@@ -696,6 +739,7 @@ install_phpmyadmin() {
     
     # Install PHP and extensions first
     print_step "Installing PHP dependencies..."
+    wait_for_apt
     case "$PKG_MANAGER" in
         apt-get)
             # Ensure non-interactive for phpmyadmin
@@ -771,6 +815,8 @@ install_postgresql() {
         print_warning "PostgreSQL already installed, skipping..."
         return
     fi
+    
+    wait_for_apt
     
     case "$PKG_MANAGER" in
         apt-get)
@@ -945,6 +991,8 @@ EOF
 #######################################
 install_certbot() {
     print_step "Installing Certbot..."
+    
+    wait_for_apt
     
     case "$PKG_MANAGER" in
         apt-get)
