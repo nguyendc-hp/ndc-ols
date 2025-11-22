@@ -11,7 +11,7 @@ ssh root@your-vps-ip
 ### 2. Install NDC OLS (One Command!)
 
 ```bash
-curl -sL https://raw.githubusercontent.com/nguyendc-hp/ndc-ols/main/install.sh | bash
+curl -sL https://raw.githubusercontent.com/nguyendc-hp/ndc-ols/main/ndc-ols/install.sh | bash
 ```
 
 **That's it!** Installation takes 10-15 minutes automatically.
@@ -49,9 +49,11 @@ ndc
 ## What You Got:
 
 ✅ Nginx web server  
-✅ Node.js (LTS)  
+✅ Node.js (LTS via NVM)  
 ✅ PM2 process manager  
-✅ PostgreSQL + MongoDB + MySQL + Redis  
+✅ PostgreSQL + pgAdmin 4  
+✅ MongoDB + Mongo Express  
+✅ Redis cache  
 ✅ Free SSL (Let's Encrypt)  
 ✅ Firewall configured  
 ✅ Auto backup system  

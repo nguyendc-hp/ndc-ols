@@ -4,7 +4,8 @@
 # Auto install all dependencies
 #######################################
 
-set -euo pipefail
+# Note: Using set -eo pipefail (not -u) because NVM uses unbound variables
+set -eo pipefail
 
 # Prevent interactive prompts
 export DEBIAN_FRONTEND=noninteractive
@@ -342,25 +343,24 @@ install_node() {
     
     # Install NVM
     if [ ! -d "$HOME/.nvm" ]; then
+        print_info "Downloading NVM v0.39.7..."
         curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-        
-        export NVM_DIR="$HOME/.nvm"
-        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-        
-        print_success "NVM installed"
+        print_success "NVM downloaded"
     else
         print_warning "NVM already installed"
     fi
     
-    # Install Node.js LTS
+    # Load NVM into current shell
     export NVM_DIR="$HOME/.nvm"
-    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" --no-use
     
+    # Install Node.js LTS
+    print_info "Installing Node.js LTS..."
     nvm install --lts
     nvm use --lts
     nvm alias default 'lts/*'
     
-    NODE_VERSION=$(node -v)
+    NODE_VERSION=$(node -v 2>/dev/null || echo "unknown")
     print_success "Node.js $NODE_VERSION installed"
 }
 
@@ -370,12 +370,16 @@ install_node() {
 install_pm2() {
     print_step "Installing PM2..."
     
+    # Load NVM
     export NVM_DIR="$HOME/.nvm"
-    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" --no-use
     
+    print_info "Installing PM2 globally..."
     npm install -g pm2
+    
+    print_info "Configuring PM2 startup..."
     pm2 startup systemd -u root --hp /root
-    pm2 save
+    pm2 save --force
     
     print_success "PM2 installed"
 }
@@ -500,8 +504,9 @@ install_mongo_express() {
         return
     fi
     
+    # Load NVM
     export NVM_DIR="$HOME/.nvm"
-    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" --no-use
     
     # Create directory for mongo-express local install
     MONGO_EXPRESS_DIR="$NDC_INSTALL_DIR/mongo-express"
