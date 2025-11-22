@@ -164,6 +164,11 @@ EOF
     fi
     
     print_step "Creating PM2 configuration..."
+    
+    # Generate secure secrets
+    COOKIE_SECRET=$(openssl rand -hex 32)
+    SESSION_SECRET=$(openssl rand -hex 32)
+    
     cat > "$NDC_CONFIG_DIR/mongo-express.config.js" <<EOF
 module.exports = {
   apps: [{
@@ -181,12 +186,16 @@ module.exports = {
       ME_CONFIG_MONGODB_PORT: '27017',
       ME_CONFIG_MONGODB_ADMINUSERNAME: '$MONGODB_USER',
       ME_CONFIG_MONGODB_ADMINPASSWORD: '$MONGODB_PASS',
+      ME_CONFIG_MONGODB_AUTH_DATABASE: 'admin',
+      ME_CONFIG_MONGODB_AUTH_USERNAME: '$MONGODB_USER',
+      ME_CONFIG_MONGODB_AUTH_PASSWORD: '$MONGODB_PASS',
       ME_CONFIG_BASICAUTH_USERNAME: '$MONGO_EXPRESS_USER',
       ME_CONFIG_BASICAUTH_PASSWORD: '$MONGO_EXPRESS_PASS',
       ME_CONFIG_SITE_BASEURL: '/',
-      ME_CONFIG_SITE_COOKIESECRET: 'secret_$(date +%s)',
-      ME_CONFIG_SITE_SESSIONSECRET: 'secret_$(date +%s)',
+      ME_CONFIG_SITE_COOKIESECRET: '$COOKIE_SECRET',
+      ME_CONFIG_SITE_SESSIONSECRET: '$SESSION_SECRET',
       VCAP_APP_HOST: 'localhost',
+      VCAP_APP_PORT: '8081',
       PORT: '8081'
     }
   }]
