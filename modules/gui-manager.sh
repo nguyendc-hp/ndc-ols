@@ -153,7 +153,7 @@ EOF
     fi
     
     print_step "Installing Mongo Express globally..."
-    npm install -g mongo-express 2>&1 | grep -v "npm WARN" || true
+    npm install -g mongo-express@1.0.2 2>&1 | grep -v "npm WARN" || true
     
     local MONGO_EXPRESS_HOME="$(npm root -g)/mongo-express"
     
@@ -162,14 +162,6 @@ EOF
         press_any_key
         return
     fi
-    
-    # Build assets (required for mongo-express 1.1.0+)
-    print_step "Building Mongo Express assets..."
-    cd "$MONGO_EXPRESS_HOME"
-    npm run build 2>&1 | grep -v "npm WARN" || {
-        print_warning "Build script not found, creating build-assets.json..."
-        echo '{}' > "$MONGO_EXPRESS_HOME/build-assets.json"
-    }
     
     print_step "Creating PM2 configuration..."
     
