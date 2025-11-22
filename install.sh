@@ -1429,7 +1429,6 @@ show_completion() {
     echo -e "  ${GREEN}✓${NC} Node.js + NVM"
     echo -e "  ${GREEN}✓${NC} PM2 process manager"
     echo -e "  ${GREEN}✓${NC} MongoDB + Mongo Express"
-    echo -e "  ${GREEN}✓${NC} MariaDB + phpMyAdmin"
     echo -e "  ${GREEN}✓${NC} PostgreSQL + pgAdmin 4"
     echo -e "  ${GREEN}✓${NC} Redis cache"
     echo -e "  ${GREEN}✓${NC} Let's Encrypt SSL"
@@ -1448,11 +1447,6 @@ show_completion() {
         echo -e "    URL : ${YELLOW}http://$SERVER_IP:8081${NC}"
         echo -e "    User: ${YELLOW}$MONGO_EXPRESS_USER${NC}"
         echo -e "    Pass: ${YELLOW}$MONGO_EXPRESS_PASS${NC}"
-        echo ""
-        echo -e "  ${BOLD}phpMyAdmin GUI:${NC}"
-        echo -e "    URL : ${YELLOW}http://$SERVER_IP:8080${NC}"
-        echo -e "    User: ${YELLOW}root${NC}"
-        echo -e "    Pass: ${YELLOW}$MYSQL_ROOT_PASS${NC}"
         echo ""
         echo -e "  ${BOLD}PostgreSQL Admin:${NC}"
         echo -e "    User: ${YELLOW}admin${NC}"
@@ -1480,6 +1474,47 @@ show_completion() {
 }
 
 #######################################
+# Disable unattended-upgrades
+#######################################
+disable_unattended_upgrades() {
+    print_step "Disabling unattended-upgrades during installation..."
+    
+    # Stop the service
+    systemctl stop unattended-upgrades 2>/dev/null || true
+    systemctl disable unattended-upgrades 2>/dev/null || true
+    
+    # Kill any running unattended-upgrade processes
+    pkill -9 -f unattended-upgrade 2>/dev/null || true
+    
+    # Disable apt daily tasks temporarily
+    systemctl stop apt-daily.timer 2>/dev/null || true
+    systemctl stop apt-daily-upgrade.timer 2>/dev/null || true
+    systemctl disable apt-daily.timer 2>/dev/null || true
+    systemctl disable apt-daily-upgrade.timer 2>/dev/null || true
+    
+    print_success "Unattended-upgrades disabled"
+}
+
+#######################################
+# Re-enable unattended-upgrades
+#######################################
+enable_unattended_upgrades() {
+    print_step "Re-enabling unattended-upgrades..."
+    
+    # Re-enable the service
+    systemctl enable unattended-upgrades 2>/dev/null || true
+    systemctl start unattended-upgrades 2>/dev/null || true
+    
+    # Re-enable apt daily tasks
+    systemctl enable apt-daily.timer 2>/dev/null || true
+    systemctl enable apt-daily-upgrade.timer 2>/dev/null || true
+    systemctl start apt-daily.timer 2>/dev/null || true
+    systemctl start apt-daily-upgrade.timer 2>/dev/null || true
+    
+    print_success "Unattended-upgrades re-enabled"
+}
+
+#######################################
 # Main installation
 #######################################
 main() {
@@ -1494,7 +1529,7 @@ main() {
     echo ""
     echo -e "${YELLOW}This will install:${NC}"
     echo "  • Nginx, Node.js, PM2"
-    echo "  • MongoDB, Mongo Express, MariaDB, phpMyAdmin, Redis"
+    echo "  • MongoDB, Mongo Express, Redis"
     echo "  • PostgreSQL, pgAdmin 4"
     echo "  • SSL (Let's Encrypt), Firewall, Fail2ban"
     echo ""
@@ -1522,6 +1557,9 @@ main() {
     print_step "Starting installation..."
     echo ""
     
+    # Disable unattended-upgrades before installation
+    disable_unattended_upgrades
+    
     # Installation steps
     update_system
     install_dependencies
@@ -1530,9 +1568,7 @@ main() {
     install_pm2
     install_mongodb
     install_mongo_express
-    install_mysql
     install_redis
-    install_phpmyadmin
     install_postgresql
     install_pgadmin
     install_certbot
@@ -1542,6 +1578,9 @@ main() {
     create_symlink
     create_config
     setup_login_banner
+    
+    # Re-enable unattended-upgrades after installation
+    enable_unattended_upgrades
     
     # Show completion
     show_completion

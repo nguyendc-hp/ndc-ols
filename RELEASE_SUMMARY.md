@@ -22,6 +22,10 @@ Tất cả **8 yêu cầu** của bạn đã được thực hiện:
 - ✅ Port 5050 mặc định
 - ✅ Toggle bật/tắt truy cập
 
+**Đã loại bỏ:**
+- ❌ MariaDB/MySQL - Không cần thiết, PostgreSQL đã đủ
+- ❌ phpMyAdmin - Đơn giản hóa, chỉ cần pgAdmin 4
+
 ### ✅ 2. Fix Mongo Express: 2 Phương Án Truy Cập + SSH Tunnel
 
 **Đã fix:**
@@ -43,14 +47,21 @@ Tất cả **8 yêu cầu** của bạn đã được thực hiện:
 - ✅ Cấu hình systemd service
 - ✅ SSH tunnel + web access
 
-### ✅ 4. Optimize Performance
+### ✅ 4. Optimize Performance & Installation
 
-**Đã tối ưu:**
+**Performance:**
 - ✅ PM2 cluster mode support
 - ✅ Nginx gzip compression
 - ✅ Static asset caching
 - ✅ MongoDB connection pooling
 - ✅ Error handling tốt hơn
+
+**Installation Reliability:**
+- ✅ Tự động tắt unattended-upgrades khi install
+- ✅ Tự động bật lại sau khi cài xong
+- ✅ Ngăn chặn APT lock conflicts
+- ✅ Tạm dừng apt daily tasks
+- ✅ Đơn giản hóa: Chỉ MongoDB + PostgreSQL
 
 ### ✅ 5. Improve Documentation
 
@@ -181,11 +192,6 @@ cd /usr/local/ndc-ols
 16) Uninstall pgAdmin 4
 ```
 
-### phpMyAdmin:
-```
-21) Install phpMyAdmin
-```
-
 ### Credentials:
 ```
 22) Show All Database GUI Credentials
@@ -219,7 +225,6 @@ cd /usr/local/ndc-ols
 - ✅ Node.js & PM2 (5 tests)
 - ✅ MongoDB (5 tests)
 - ✅ Mongo Express (3 tests)
-- ✅ MySQL/MariaDB (3 tests)
 - ✅ PostgreSQL (2 tests)
 - ✅ pgAdmin 4 (2 tests)
 - ✅ Redis (2 tests)
@@ -228,7 +233,7 @@ cd /usr/local/ndc-ols
 - ✅ Disk Space (2 tests)
 - ✅ Memory (1 test)
 
-**Total: 45+ tests**
+**Total: 40+ tests** (MariaDB/phpMyAdmin tests removed)
 
 ---
 

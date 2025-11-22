@@ -35,13 +35,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SSL Integration**: Easy domain setup with Let's Encrypt
 - **Access Mode Tracking**: Stores current mode in `/etc/ndc-ols/`
 
+### Added - Installation Improvements
+
+#### Unattended-Upgrades Management
+- **Auto Disable During Install**: Prevents apt/dpkg lock conflicts
+- **Auto Re-enable After Install**: Restores system security updates
+- **APT Daily Tasks Control**: Temporarily disables daily update timers
+- **Improved Reliability**: Eliminates installation failures from locked package managers
+
+#### Simplified Database Stack
+- **Removed MariaDB**: Focus on PostgreSQL for relational database needs
+- **Removed phpMyAdmin**: Reduced complexity, pgAdmin 4 handles PostgreSQL
+- **Streamlined Installation**: Faster install process with fewer components
+- **MongoDB + PostgreSQL**: Two databases for different use cases
+
 ### Added - System Test Suite
 - **Comprehensive Testing**: 45+ tests covering all components
 - **NDC-OLS Installation**: Verify directories, commands, configs
 - **System Services**: Nginx, firewall, Fail2ban
 - **Node.js & PM2**: Version checks, running apps
-- **Databases**: MongoDB, PostgreSQL, MySQL connection tests
-- **Database GUIs**: Mongo Express, pgAdmin, phpMyAdmin
+- **Databases**: MongoDB, PostgreSQL connection tests
+- **Database GUIs**: Mongo Express, pgAdmin status checks
 - **Redis**: Connection and version tests
 - **SSL/Certbot**: Certificate detection
 - **Network**: Public IP, connectivity, DNS
@@ -50,16 +64,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Summary Report**: Pass/fail counts with health status
 
 ### Added - Documentation
-
-#### Quick Deploy Guide
-- **Step-by-step Instructions**: From fresh VPS to deployed app
-- **MiCenter Specific**: Tailored for this project
-- **SSH Tunnel Guide**: Detailed for all platforms (Windows/Linux/macOS/PuTTY)
-- **Troubleshooting Section**: Common issues and solutions
-- **Security Checklist**: Post-deployment security steps
-- **Backup Guide**: Automated and manual backup instructions
-- **Performance Tips**: PM2 clustering, Nginx optimization
-- **Update Procedure**: How to update deployed apps
 
 #### Enhanced README
 - **Table of Contents**: Easy navigation
@@ -80,6 +84,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **User Feedback**: Real-time status updates during installation
 - **Modular Design**: Easy to add new GUI tools in future
 
+#### Installation Process
+- **Cleaner Output**: Better progress messages and error reporting
+- **Faster Installation**: Removed unnecessary components (MariaDB/phpMyAdmin)
+- **More Reliable**: Unattended-upgrades management prevents lock conflicts
+- **Updated Completion Message**: Shows only installed components (MongoDB + PostgreSQL)
+
 ### Fixed
 
 #### MongoDB Express
@@ -90,6 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Credentials**: Properly loads from auth.conf
 
 #### Installation Process
+- **APT Lock Issues**: Disabled unattended-upgrades during install prevents conflicts
 - **MongoDB Setup**: Wait for service to start before creating users
 - **Mongo Express**: Verify installation before starting PM2
 - **Error Recovery**: Better handling of installation failures
