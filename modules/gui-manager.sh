@@ -7,6 +7,10 @@
 source "$NDC_INSTALL_DIR/utils/colors.sh"
 source "$NDC_INSTALL_DIR/utils/helpers.sh"
 
+# Load NVM for npm and node commands
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" --no-use
+
 #######################################
 # Main GUI Manager Menu
 #######################################
@@ -95,6 +99,31 @@ gui_manager_menu() {
 
 install_mongo_express() {
     print_header "INSTALL MONGO EXPRESS"
+    
+    # Load NVM for npm and pm2
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" --no-use
+    
+    # Check if Node.js is available
+    if ! command -v node >/dev/null 2>&1; then
+        print_error "Node.js is not installed! Please run main installation first."
+        press_any_key
+        return
+    fi
+    
+    # Check if npm is available
+    if ! command -v npm >/dev/null 2>&1; then
+        print_error "npm is not installed! Please run main installation first."
+        press_any_key
+        return
+    fi
+    
+    # Check if PM2 is available
+    if ! command -v pm2 >/dev/null 2>&1; then
+        print_error "PM2 is not installed! Please run main installation first."
+        press_any_key
+        return
+    fi
     
     # Check if MongoDB is installed
     if ! systemctl is-active --quiet mongod; then
@@ -193,7 +222,19 @@ EOF
 enable_mongo_express_web() {
     print_header "ENABLE WEB ACCESS - MONGO EXPRESS"
     
-    if ! pm2 list | grep -q "mongo-express"; then
+    # Load NVM to ensure pm2 is available
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" --no-use
+    
+    # Check if PM2 is available
+    if ! command -v pm2 >/dev/null 2>&1; then
+        print_error "PM2 is not installed! Please install Node.js and PM2 first."
+        press_any_key
+        return
+    fi
+    
+    # Check if Mongo Express is running
+    if ! pm2 list 2>/dev/null | grep -q "mongo-express"; then
         print_error "Mongo Express is not installed! Please install it first (option 1)"
         press_any_key
         return
@@ -247,7 +288,11 @@ enable_mongo_express_web() {
 disable_mongo_express_web() {
     print_header "DISABLE WEB ACCESS - MONGO EXPRESS"
     
-    if ! pm2 list | grep -q "mongo-express"; then
+    # Load NVM
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" --no-use
+    
+    if ! command -v pm2 >/dev/null 2>&1 || ! pm2 list 2>/dev/null | grep -q "mongo-express"; then
         print_error "Mongo Express is not installed!"
         press_any_key
         return
@@ -319,7 +364,11 @@ show_mongo_express_tunnel() {
 secure_mongo_express_domain() {
     print_header "SECURE WITH DOMAIN + SSL"
     
-    if ! pm2 list | grep -q "mongo-express"; then
+    # Load NVM
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" --no-use
+    
+    if ! command -v pm2 >/dev/null 2>&1 || ! pm2 list 2>/dev/null | grep -q "mongo-express"; then
         print_error "Mongo Express is not installed!"
         press_any_key
         return
@@ -430,7 +479,11 @@ EOFNGINX
 uninstall_mongo_express() {
     print_header "UNINSTALL MONGO EXPRESS"
     
-    if ! pm2 list | grep -q "mongo-express"; then
+    # Load NVM
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" --no-use
+    
+    if ! command -v pm2 >/dev/null 2>&1 || ! pm2 list 2>/dev/null | grep -q "mongo-express"; then
         print_warning "Mongo Express is not installed"
         press_any_key
         return
@@ -584,8 +637,22 @@ EOF
 enable_pgadmin_web() {
     print_header "ENABLE WEB ACCESS - PGADMIN"
     
-    if ! systemctl is-active --quiet pgadmin4; then
-        print_error "pgAdmin 4 is not installed!"
+    # Check multiple possible service names
+    local pgadmin_running=false
+    if systemctl is-active --quiet pgadmin4 2>/dev/null; then
+        pgadmin_running=true
+    elif systemctl is-active --quiet pgadmin4-web 2>/dev/null; then
+        pgadmin_running=true
+    elif systemctl is-active --quiet apache-pgadmin4 2>/dev/null; then
+        pgadmin_running=true
+    fi
+    
+    if [ "$pgadmin_running" = false ]; then
+        print_error "pgAdmin 4 is not installed or not running!"
+        print_info "Please install it first (option 11)"
+        echo ""
+        print_info "Checking pgAdmin status..."
+        systemctl status pgadmin4 2>/dev/null || systemctl status pgadmin4-web 2>/dev/null || echo "No pgAdmin service found"
         press_any_key
         return
     fi

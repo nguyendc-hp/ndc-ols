@@ -11,7 +11,7 @@ ssh root@your-vps-ip
 ### 2. Install NDC OLS (One Command!)
 
 ```bash
-curl -sL https://raw.githubusercontent.com/nguyendc-hp/ndc-ols/main/ndc-ols/install.sh | bash
+curl -sL https://raw.githubusercontent.com/nguyendc-hp/ndc-ols/main/install.sh | bash
 ```
 
 **That's it!** Installation takes 10-15 minutes automatically.
