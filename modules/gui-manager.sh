@@ -163,6 +163,14 @@ EOF
         return
     fi
     
+    # Build assets (required for mongo-express 1.1.0+)
+    print_step "Building Mongo Express assets..."
+    cd "$MONGO_EXPRESS_HOME"
+    npm run build 2>&1 | grep -v "npm WARN" || {
+        print_warning "Build script not found, creating build-assets.json..."
+        echo '{}' > "$MONGO_EXPRESS_HOME/build-assets.json"
+    }
+    
     print_step "Creating PM2 configuration..."
     
     # Generate secure secrets
