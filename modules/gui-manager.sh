@@ -662,7 +662,54 @@ EOF
 
     # Create systemd service for pgAdmin
     print_step "Creating pgAdmin systemd service..."
-    cat > /etc/systemd/system/pgadmin4.service <<'SVCEOF'
+    
+    # Find pgAdmin4 executable path
+    PGADMIN_BIN=""
+    if [ -f /usr/pgadmin4/bin/pgadmin4 ]; then
+        PGADMIN_BIN="/usr/pgadmin4/bin/pgadmin4"
+    elif [ -f /usr/bin/pgadmin4 ]; then
+        PGADMIN_BIN="/usr/bin/pgadmin4"
+    elif [ -f /usr/local/bin/pgadmin4 ]; then
+        PGADMIN_BIN="/usr/local/bin/pgadmin4"
+    else
+        # Try to find it
+        PGADMIN_BIN=$(which pgadmin4 2>/dev/null || find /usr -name "pgadmin4" -type f 2>/dev/null | head -1)
+    fi
+    
+    # If still not found, use web server approach
+    if [ -z "$PGADMIN_BIN" ] || [ ! -f "$PGADMIN_BIN" ]; then
+        print_warning "pgAdmin4 binary not found, using web server approach..."
+        
+        # Create a Python wrapper script to run pgAdmin
+        cat > /usr/local/bin/pgadmin4-server <<'PYEOF'
+#!/usr/bin/env python3
+import sys
+sys.path.insert(0, '/usr/pgadmin4/web')
+
+from pgadmin import create_app
+
+app = create_app()
+
+if __name__ == '__main__':
+    # Load config
+    import os
+    if os.path.exists('/etc/pgadmin/config_local.py'):
+        app.config.from_pyfile('/etc/pgadmin/config_local.py')
+    
+    # Get host and port from config
+    host = app.config.get('PGADMIN_LISTEN_ADDRESS', 'localhost')
+    port = app.config.get('PGADMIN_LISTEN_PORT', 5050)
+    
+    app.run(host=host, port=port, debug=False)
+PYEOF
+        chmod +x /usr/local/bin/pgadmin4-server
+        PGADMIN_BIN="/usr/local/bin/pgadmin4-server"
+        print_info "Using wrapper script: $PGADMIN_BIN"
+    else
+        print_info "Found pgAdmin4 at: $PGADMIN_BIN"
+    fi
+    
+    cat > /etc/systemd/system/pgadmin4.service <<SVCEOF
 [Unit]
 Description=pgAdmin 4
 After=network.target
@@ -670,9 +717,10 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/pgadmin4/bin/pgadmin4
+ExecStart=$PGADMIN_BIN
 Restart=on-failure
 RestartSec=5s
+Environment="PYTHONPATH=/usr/pgadmin4/web"
 
 [Install]
 WantedBy=multi-user.target
@@ -684,7 +732,28 @@ SVCEOF
     systemctl restart pgadmin4
     
     # Wait for service to start
-    sleep 3
+    print_step "Waiting for pgAdmin to start..."
+    sleep 5
+    
+    # Verify service is running
+    if systemctl is-active --quiet pgadmin4; then
+        print_success "pgAdmin 4 service is running"
+        
+        # Check if port is listening
+        sleep 2
+        if netstat -tlnp 2>/dev/null | grep 5050 >/dev/null || ss -tlnp 2>/dev/null | grep 5050 >/dev/null; then
+            print_success "Port 5050 is listening"
+        else
+            print_warning "Port 5050 may not be ready yet"
+            print_info "Check status with: systemctl status pgadmin4"
+        fi
+    else
+        print_error "pgAdmin 4 service failed to start!"
+        print_info "Checking logs..."
+        journalctl -u pgadmin4 -n 20 --no-pager
+        echo ""
+        print_info "Try running: systemctl status pgadmin4"
+    fi
     
     # Save access mode
     mkdir -p /etc/ndc-ols
