@@ -266,8 +266,16 @@ enable_mongo_express_web() {
         firewall-cmd --reload
     fi
     
-    # Update access mode
-    sed -i 's/MONGO_EXPRESS_ACCESS_MODE=.*/MONGO_EXPRESS_ACCESS_MODE="Web (Port 8081)"/' /etc/ndc-ols/mongo-express-access.conf
+    # Update access mode (create file if not exists)
+    mkdir -p /etc/ndc-ols
+    if [ -f /etc/ndc-ols/mongo-express-access.conf ]; then
+        sed -i 's/MONGO_EXPRESS_ACCESS_MODE=.*/MONGO_EXPRESS_ACCESS_MODE="Web (Port 8081)"/' /etc/ndc-ols/mongo-express-access.conf
+    else
+        cat > /etc/ndc-ols/mongo-express-access.conf <<EOF
+MONGO_EXPRESS_ACCESS_MODE="Web (Port 8081)"
+MONGO_EXPRESS_PORT="8081"
+EOF
+    fi
     
     print_success "Web access enabled!"
     echo ""
@@ -606,14 +614,36 @@ PYEOF
 MASTER_PASSWORD_REQUIRED = False
 SERVER_MODE = True
 DEFAULT_SERVER = '127.0.0.1'
-DEFAULT_SERVER_PORT = 5050
+DEFAULT_SERVER_PORT = 5432
 PGADMIN_LISTEN_ADDRESS = 'localhost'
 PGADMIN_LISTEN_PORT = 5050
 EOF
 
-    # Start pgAdmin
+    # Create systemd service for pgAdmin
+    print_step "Creating pgAdmin systemd service..."
+    cat > /etc/systemd/system/pgadmin4.service <<'SVCEOF'
+[Unit]
+Description=pgAdmin 4
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/pgadmin4/bin/pgadmin4
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+    # Reload systemd and start service
+    systemctl daemon-reload
     systemctl enable pgadmin4
     systemctl restart pgadmin4
+    
+    # Wait for service to start
+    sleep 3
     
     # Save access mode
     mkdir -p /etc/ndc-ols
