@@ -248,13 +248,54 @@ enable_mongo_express_web() {
     
     print_step "Updating Mongo Express configuration..."
     
-    # Update config to bind to 0.0.0.0
-    sed -i "s/VCAP_APP_HOST: 'localhost'/VCAP_APP_HOST: '0.0.0.0'/g" "$NDC_CONFIG_DIR/mongo-express.config.js"
+    # Update config to bind to 0.0.0.0 (try multiple patterns)
+    if [ -f "$NDC_CONFIG_DIR/mongo-express.config.js" ]; then
+        # Try with single quotes
+        sed -i "s/VCAP_APP_HOST: 'localhost'/VCAP_APP_HOST: '0.0.0.0'/g" "$NDC_CONFIG_DIR/mongo-express.config.js"
+        # Try with double quotes
+        sed -i 's/VCAP_APP_HOST: "localhost"/VCAP_APP_HOST: "0.0.0.0"/g' "$NDC_CONFIG_DIR/mongo-express.config.js"
+        # Try without quotes
+        sed -i 's/VCAP_APP_HOST: localhost/VCAP_APP_HOST: 0.0.0.0/g' "$NDC_CONFIG_DIR/mongo-express.config.js"
+        
+        # Verify the change
+        if grep -q "VCAP_APP_HOST.*0\\.0\\.0\\.0" "$NDC_CONFIG_DIR/mongo-express.config.js"; then
+            print_success "Configuration updated to bind to 0.0.0.0"
+        else
+            print_warning "Could not verify config change. Manually updating..."
+            # Force update by replacing the entire env section
+            sed -i "/VCAP_APP_HOST/c\\      VCAP_APP_HOST: '0.0.0.0'," "$NDC_CONFIG_DIR/mongo-express.config.js"
+        fi
+    else
+        print_error "Config file not found: $NDC_CONFIG_DIR/mongo-express.config.js"
+        press_any_key
+        return
+    fi
     
     # Restart Mongo Express
+    print_step "Restarting Mongo Express..."
     pm2 restart mongo-express --update-env
     pm2 save
-    sleep 2
+    sleep 3
+    
+    # Verify service is running and binding correctly
+    print_step "Verifying service..."
+    if pm2 list 2>/dev/null | grep -q "mongo-express.*online"; then
+        print_success "Mongo Express is running"
+        
+        # Check if port is listening
+        if netstat -tlnp 2>/dev/null | grep 8081 | grep -q "0.0.0.0" || ss -tlnp 2>/dev/null | grep 8081 | grep -q "0.0.0.0"; then
+            print_success "Port 8081 is open and listening on 0.0.0.0"
+        else
+            print_warning "Port 8081 may not be accessible externally"
+            print_info "Checking binding..."
+            netstat -tlnp 2>/dev/null | grep 8081 || ss -tlnp 2>/dev/null | grep 8081 || true
+        fi
+    else
+        print_error "Mongo Express failed to start!"
+        print_info "Check logs with: pm2 logs mongo-express"
+        press_any_key
+        return
+    fi
     
     # Open firewall
     print_step "Opening firewall port 8081..."
